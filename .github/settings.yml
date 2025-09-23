@@ -1,0 +1,180 @@
+# GitHub 仓库设置
+# 用于源码保护策略
+
+# 仓库基本信息
+repository:
+  name: trajectory-planning
+  description: "Modern robotic arm trajectory planning system based on Domain-Driven Design (DDD) | 基于领域驱动设计的现代化机械臂轨迹规划系统"
+  homepage: https://github.com/Ding-Kaiyue/trajectory-planning
+  topics:
+    - robotics
+    - trajectory-planning
+    - moveit2
+    - ros2
+    - domain-driven-design
+    - cpp
+    - industrial-robotics
+    - motion-planning
+  private: false
+  has_issues: true
+  has_projects: false
+  has_wiki: false
+  has_discussions: false
+
+# 分支保护规则
+branches:
+  - name: master
+    protection:
+      # 需要状态检查通过
+      required_status_checks:
+        strict: true
+        contexts: []
+
+      # 强制管理员遵守规则
+      enforce_admins: true
+
+      # Pull Request 审查要求
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+        require_review_from_code_owners: true
+
+      # 限制推送权限
+      restrictions:
+        users: []
+        teams: []
+        apps: []
+
+      # 其他保护选项
+      allow_force_pushes: false
+      allow_deletions: false
+      required_linear_history: false
+
+# 标签管理
+labels:
+  # Bug相关
+  - name: "bug"
+    color: "d73a4a"
+    description: "报告的错误或问题"
+
+  - name: "critical-bug"
+    color: "b60205"
+    description: "严重错误，需要立即修复"
+
+  # 功能相关
+  - name: "enhancement"
+    color: "a2eeef"
+    description: "新功能或功能改进"
+
+  - name: "feature-request"
+    color: "0052cc"
+    description: "用户请求的新功能"
+
+  # 文档相关
+  - name: "documentation"
+    color: "0075ca"
+    description: "文档改进或更新"
+
+  # 帮助和问题
+  - name: "question"
+    color: "d876e3"
+    description: "需要澄清或讨论的问题"
+
+  - name: "help wanted"
+    color: "008672"
+    description: "寻求社区帮助"
+
+  - name: "good first issue"
+    color: "7057ff"
+    description: "适合新贡献者的问题"
+
+  # 优先级标签
+  - name: "priority: high"
+    color: "ff6b6b"
+    description: "高优先级"
+
+  - name: "priority: medium"
+    color: "ffd93d"
+    description: "中等优先级"
+
+  - name: "priority: low"
+    color: "6bcf7f"
+    description: "低优先级"
+
+  # 类型标签
+  - name: "type: bug"
+    color: "ee0701"
+    description: "Bug修复"
+
+  - name: "type: feature"
+    color: "336633"
+    description: "新功能"
+
+  - name: "type: improvement"
+    color: "0e8a16"
+    description: "改进现有功能"
+
+  - name: "type: refactor"
+    color: "5319e7"
+    description: "代码重构"
+
+  - name: "type: test"
+    color: "1d76db"
+    description: "测试相关"
+
+  # 组件标签
+  - name: "component: planning"
+    color: "c2e0c6"
+    description: "轨迹规划模块"
+
+  - name: "component: execution"
+    color: "bfdadc"
+    description: "轨迹执行模块"
+
+  - name: "component: hardware"
+    color: "f9d0c4"
+    description: "硬件集成"
+
+  - name: "component: config"
+    color: "d4c5f9"
+    description: "配置文件"
+
+  # 状态标签
+  - name: "status: needs-review"
+    color: "fbca04"
+    description: "需要代码审查"
+
+  - name: "status: work-in-progress"
+    color: "c5def5"
+    description: "开发中"
+
+  - name: "status: blocked"
+    color: "b60205"
+    description: "被阻塞"
+
+  - name: "duplicate"
+    color: "cfd3d7"
+    description: "重复的问题或PR"
+
+  - name: "wontfix"
+    color: "ffffff"
+    description: "不会修复的问题"
+
+  - name: "invalid"
+    color: "e4e669"
+    description: "无效的问题"
+
+# 合并设置
+merge_commit_title: "PR_TITLE"
+merge_commit_message: "PR_BODY"
+squash_merge_commit_title: "PR_TITLE"
+squash_merge_commit_message: "PR_BODY"
+
+# 删除head分支设置
+delete_branch_on_merge: true
+
+# 允许的合并类型
+allow_merge_commit: true
+allow_squash_merge: true
+allow_rebase_merge: false

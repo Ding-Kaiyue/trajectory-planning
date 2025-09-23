@@ -1,0 +1,23 @@
+# 总入口节点（trajectory_planning_node）的参数
+default_move_group: "arm"
+
+# 支持的规划模式（可选）
+available_strategies:
+  - movej
+  - movel
+  - movec
+
+# 关联每个策略的参数文件（路径相对于包内 config/）
+strategy_params:
+  movej: "config/movej_params.yaml"
+  movel: "config/movel_params.yaml"
+  movec: "config/movec_params.yaml"
+
+# 安全相关
+safety_limit_file: "config/safety_limit.yaml"
+
+# 规划通用配置
+planning_time: 5.0
+velocity_scaling: 0.2
+acceleration_scaling: 0.2
+goal_tolerance: 0.001

@@ -1,0 +1,47 @@
+servo_node:
+  ros__parameters:
+    moveit_servo:
+      planning_frame: world                # 你的世界坐标系（根据URDF定义）
+      tracking_frame: Link6               # 末端执行器的link名称（SRDF/URDF中定义）
+      move_group_name: arm               # SRDF中定义的MoveIt运动组名称
+      end_effector_name: end_effector    # SRDF中定义的末端执行器名称
+
+      robot_description: robot_description
+      robot_description_semantic: robot_description_semantic
+
+      command_in_type: unitless          # 支持速度控制的单位无关输入
+      command_in_topic: /servo_server/delta_twist_cmds
+
+      command_out_type: trajectory_msgs/JointTrajectory
+      command_out_topic: /servo_server/joint_velocity_cmds
+
+      publish_period: 0.01               # 输出控制指令的频率（秒）
+      incoming_command_timeout: 0.1      # 超时阈值，防止指令丢失后机械臂继续运动
+      use_streaming_mode: true           # 启用连续发布模式
+
+      scale:
+        linear: 0.25                     # 线速度缩放系数（可调）
+        rotational: 0.25                 # 角速度缩放系数（可调）
+
+      low_pass_filter_coeff: 0.15        # 速度滤波器参数，越小越平滑但响应慢
+
+      collision_check: true              # 启用自碰撞检测
+      collision_check_rate: 10.0         # 碰撞检测频率（Hz）
+      collision_distance_safety_factor: 1.0
+      collision_proximity_threshold: 0.2
+
+      self_collision_proximity_threshold: 0.1  # 可选，自碰撞检测阈值
+      scene_collision_proximity_threshold: 0.2
+
+      allow_trajectory_execution: true
+      enforce_joint_limits: true
+      enforce_velocity_limits: true
+      enforce_position_limits: true
+
+      joint_velocity_limits:
+        joint_1: 1.0
+        joint_2: 1.0
+        joint_3: 1.0
+        joint_4: 1.0
+        joint_5: 1.0
+        joint_6: 1.0

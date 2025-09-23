@@ -1,0 +1,284 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  schedule:
+    # 每周一凌晨2点运行完整代码质量检查
+    - cron: '0 2 * * 1'
+
+jobs:
+  format-check:
+    runs-on: ubuntu-22.04
+    name: Code Format Check
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run clang-format
+      uses: jidicula/clang-format-action@v4.11.0
+      with:
+        clang-format-version: '14'
+        check-path: 'src'
+        fallback-style: 'Google'
+        exclude-regex: '^src/.*/(build|install|log)/.*'
+
+    - name: Check CMake format
+      run: |
+        # 检查CMakeLists.txt格式
+        find . -name "CMakeLists.txt" -not -path "./build/*" -not -path "./install/*" | while read file; do
+          echo "Checking CMake format: $file"
+          # 基本格式检查
+          if grep -q $'\t' "$file"; then
+            echo "Warning: Found tabs in $file, prefer spaces"
+          fi
+        done
+
+  static-analysis:
+    runs-on: ubuntu-22.04
+    name: Static Analysis
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install analysis tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cppcheck \
+          clang-tidy \
+          python3-pip
+
+        # 安装其他分析工具
+        pip3 install lizard  # 代码复杂度分析
+
+    - name: Run cppcheck
+      run: |
+        cppcheck \
+          --enable=all \
+          --suppress=missingIncludeSystem \
+          --suppress=unusedFunction \
+          --suppress=unmatchedSuppression \
+          --inline-suppr \
+          --xml \
+          --xml-version=2 \
+          --output-file=cppcheck-result.xml \
+          src/trajectory_planning_v3/src/ \
+          src/trajectory_planning_v3/include/ || true
+
+        # 显示结果摘要
+        if [ -f cppcheck-result.xml ]; then
+          echo "=== CPPCheck 结果摘要 ==="
+          grep -c "error\|warning\|style\|performance\|portability" cppcheck-result.xml || echo "无问题发现"
+        fi
+
+    - name: Run lizard complexity analysis
+      run: |
+        echo "=== 代码复杂度分析 ==="
+        lizard src/trajectory_planning_v3/src/ -l cpp --csv > complexity-report.csv || true
+
+        # 显示复杂度最高的函数
+        echo "=== 复杂度最高的10个函数 ==="
+        lizard src/trajectory_planning_v3/src/ -l cpp -s cyclomatic_complexity | head -20 || true
+
+    - name: Check for TODO/FIXME
+      run: |
+        echo "=== 待办事项检查 ==="
+        grep -r -n --include="*.cpp" --include="*.hpp" --include="*.h" \
+          -E "(TODO|FIXME|HACK|XXX)" \
+          src/trajectory_planning_v3/ || echo "无待办事项"
+
+    - name: Upload analysis results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: static-analysis-results
+        path: |
+          cppcheck-result.xml
+          complexity-report.csv
+
+  dependency-check:
+    runs-on: ubuntu-22.04
+    name: Dependency Analysis
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup ROS 2
+      uses: ros-tooling/setup-ros@v0.7
+      with:
+        required-ros-distributions: humble
+
+    - name: Analyze dependencies
+      run: |
+        echo "=== ROS2 包依赖分析 ==="
+
+        # 检查package.xml依赖
+        echo "Package.xml 依赖："
+        if [ -f src/trajectory_planning_v3/package.xml ]; then
+          grep -E "<depend>|<build_depend>|<exec_depend>" src/trajectory_planning_v3/package.xml || true
+        fi
+
+        echo ""
+        echo "=== CMake 依赖分析 ==="
+        # 检查CMakeLists.txt依赖
+        if [ -f src/trajectory_planning_v3/CMakeLists.txt ]; then
+          echo "CMakeLists.txt find_package 调用："
+          grep "find_package" src/trajectory_planning_v3/CMakeLists.txt || true
+        fi
+
+    - name: Check for security issues
+      run: |
+        echo "=== 安全检查 ==="
+
+        # 检查硬编码密码或敏感信息
+        echo "检查敏感信息..."
+        grep -r -i --include="*.cpp" --include="*.hpp" --include="*.h" \
+          -E "(password|secret|key|token)" \
+          src/trajectory_planning_v3/ || echo "未发现敏感信息"
+
+        # 检查不安全的函数调用
+        echo ""
+        echo "检查不安全函数调用..."
+        grep -r --include="*.cpp" --include="*.hpp" --include="*.h" \
+          -E "(strcpy|strcat|sprintf|gets)" \
+          src/trajectory_planning_v3/ || echo "未发现不安全函数调用"
+
+  documentation-check:
+    runs-on: ubuntu-22.04
+    name: Documentation Check
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check documentation coverage
+      run: |
+        echo "=== 文档覆盖率检查 ==="
+
+        # 检查头文件注释覆盖率
+        HEADER_FILES=$(find src/trajectory_planning_v3/include -name "*.hpp" -o -name "*.h" | wc -l)
+        DOCUMENTED_HEADERS=$(grep -l -r "@brief\|@param\|@return\|/\*\*" src/trajectory_planning_v3/include || true | wc -l)
+
+        echo "头文件总数: $HEADER_FILES"
+        echo "有文档的头文件: $DOCUMENTED_HEADERS"
+
+        if [ $HEADER_FILES -gt 0 ]; then
+          COVERAGE=$((DOCUMENTED_HEADERS * 100 / HEADER_FILES))
+          echo "文档覆盖率: $COVERAGE%"
+
+          if [ $COVERAGE -lt 50 ]; then
+            echo "⚠️ 警告: 文档覆盖率低于50%"
+          fi
+        fi
+
+    - name: Check README completeness
+      run: |
+        echo "=== README 完整性检查 ==="
+
+        required_sections=("安装" "使用" "API" "许可证")
+        for section in "${required_sections[@]}"; do
+          if grep -qi "$section" README.md; then
+            echo "✅ 找到 $section 部分"
+          else
+            echo "❌ 缺少 $section 部分"
+          fi
+        done
+
+  performance-check:
+    runs-on: ubuntu-22.04
+    name: Performance Analysis
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Analyze code metrics
+      run: |
+        echo "=== 代码指标分析 ==="
+
+        # 代码行数统计
+        echo "源码统计:"
+        find src/trajectory_planning_v3 -name "*.cpp" -o -name "*.hpp" | xargs wc -l | tail -1
+
+        echo ""
+        echo "头文件统计:"
+        find src/trajectory_planning_v3/include -name "*.hpp" -o -name "*.h" | xargs wc -l | tail -1
+
+        # 检查大文件
+        echo ""
+        echo "=== 大文件检查 (>500行) ==="
+        find src/trajectory_planning_v3 -name "*.cpp" -o -name "*.hpp" | while read file; do
+          lines=$(wc -l < "$file")
+          if [ $lines -gt 500 ]; then
+            echo "$file: $lines 行"
+          fi
+        done
+
+        # 检查长函数
+        echo ""
+        echo "=== 长函数检查 ==="
+        pip3 install lizard > /dev/null 2>&1
+        lizard src/trajectory_planning_v3 -l cpp -T nloc=50 || true
+
+  summary:
+    needs: [format-check, static-analysis, dependency-check, documentation-check, performance-check]
+    runs-on: ubuntu-22.04
+    name: Quality Summary
+    if: always()
+
+    steps:
+    - name: Generate quality report
+      run: |
+        echo "# 🔍 代码质量报告" > quality-report.md
+        echo "" >> quality-report.md
+        echo "## 📊 检查结果" >> quality-report.md
+        echo "" >> quality-report.md
+
+        # 检查各个job的状态
+        if [ "${{ needs.format-check.result }}" == "success" ]; then
+          echo "- ✅ 代码格式检查: 通过" >> quality-report.md
+        else
+          echo "- ❌ 代码格式检查: 失败" >> quality-report.md
+        fi
+
+        if [ "${{ needs.static-analysis.result }}" == "success" ]; then
+          echo "- ✅ 静态分析: 通过" >> quality-report.md
+        else
+          echo "- ❌ 静态分析: 失败" >> quality-report.md
+        fi
+
+        if [ "${{ needs.dependency-check.result }}" == "success" ]; then
+          echo "- ✅ 依赖检查: 通过" >> quality-report.md
+        else
+          echo "- ❌ 依赖检查: 失败" >> quality-report.md
+        fi
+
+        if [ "${{ needs.documentation-check.result }}" == "success" ]; then
+          echo "- ✅ 文档检查: 通过" >> quality-report.md
+        else
+          echo "- ❌ 文档检查: 失败" >> quality-report.md
+        fi
+
+        if [ "${{ needs.performance-check.result }}" == "success" ]; then
+          echo "- ✅ 性能分析: 通过" >> quality-report.md
+        else
+          echo "- ❌ 性能分析: 失败" >> quality-report.md
+        fi
+
+        echo "" >> quality-report.md
+        echo "## 📈 改进建议" >> quality-report.md
+        echo "" >> quality-report.md
+        echo "- 保持代码格式一致性" >> quality-report.md
+        echo "- 增加代码注释和文档" >> quality-report.md
+        echo "- 定期运行静态分析工具" >> quality-report.md
+        echo "- 控制函数和类的复杂度" >> quality-report.md
+
+        cat quality-report.md
+
+    - name: Upload quality report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: quality-report
+        path: quality-report.md

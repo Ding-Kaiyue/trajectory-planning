@@ -1,0 +1,230 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # 触发条件：推送版本标签 (如 v1.0.0)
+  workflow_dispatch:  # 手动触发
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  ROS_DISTRO: humble
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    name: Validate Release
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_name: ${{ steps.get_version.outputs.tag_name }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get version information
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+          TAG_NAME="${{ github.event.inputs.version }}"
+        else
+          VERSION=${GITHUB_REF#refs/tags/}
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+        fi
+
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+        echo "Release version: ${VERSION}"
+
+    - name: Validate version format
+      run: |
+        VERSION="${{ steps.get_version.outputs.version }}"
+        if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Error: Version $VERSION does not match expected format (v*.*.*)!"
+          exit 1
+        fi
+
+    - name: Check if tag exists (for manual dispatch)
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        TAG_NAME="${{ steps.get_version.outputs.tag_name }}"
+        if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+          echo "Error: Tag $TAG_NAME already exists!"
+          exit 1
+        fi
+
+  build:
+    needs: validate
+    runs-on: ubuntu-22.04
+    name: Build Release
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史，用于生成changelog
+
+    - name: Setup ROS 2
+      uses: ros-tooling/setup-ros@v0.7
+      with:
+        required-ros-distributions: ${{ env.ROS_DISTRO }}
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          python3-colcon-common-extensions \
+          python3-rosdep \
+          ros-${{ env.ROS_DISTRO }}-moveit \
+          ros-${{ env.ROS_DISTRO }}-moveit-resources
+
+    - name: Initialize rosdep
+      run: |
+        sudo rosdep init || true
+        rosdep update
+
+    - name: Create workspace and build
+      run: |
+        mkdir -p ~/ros_ws/src
+        cd ~/ros_ws/src
+        ln -s $GITHUB_WORKSPACE ./trajectory_planning
+        cd ~/ros_ws
+        rosdep install --from-paths src --ignore-src -r -y
+
+        source /opt/ros/${{ env.ROS_DISTRO }}/setup.bash
+
+        # 构建发布版本
+        colcon build \
+          --packages-select trajectory_planning_v3 \
+          --cmake-args \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+          --event-handlers console_direct+
+
+    - name: Create source archive
+      run: |
+        VERSION="${{ needs.validate.outputs.version }}"
+        tar --exclude='.git' \
+            --exclude='build' \
+            --exclude='install' \
+            --exclude='log' \
+            --exclude='.vscode' \
+            -czf trajectory-planning-${VERSION}.tar.gz \
+            src/ docs/ README.md LICENSE
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        VERSION="${{ needs.validate.outputs.version }}"
+
+        # 获取上一个版本标签
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+        echo "## 🚀 发布 ${VERSION}" > CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### 📋 变更内容" >> CHANGELOG.md
+
+        if [ -n "$PREV_TAG" ]; then
+          echo "变更从 ${PREV_TAG} 到 ${VERSION}:" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+
+          # 生成提交日志
+          git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" >> CHANGELOG.md
+        else
+          echo "- 首次发布" >> CHANGELOG.md
+        fi
+
+        echo "" >> CHANGELOG.md
+        echo "### 🔧 安装方式" >> CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo '```bash' >> CHANGELOG.md
+        echo "# 下载源码包" >> CHANGELOG.md
+        echo "wget https://github.com/Ding-Kaiyue/trajectory-planning/releases/download/${VERSION}/trajectory-planning-${VERSION}.tar.gz" >> CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "# 解压并编译" >> CHANGELOG.md
+        echo "tar -xzf trajectory-planning-${VERSION}.tar.gz" >> CHANGELOG.md
+        echo "cd trajectory-planning" >> CHANGELOG.md
+        echo "colcon build --packages-select trajectory_planning_v3" >> CHANGELOG.md
+        echo '```' >> CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### 🧪 测试环境" >> CHANGELOG.md
+        echo "- Ubuntu 22.04 LTS" >> CHANGELOG.md
+        echo "- ROS2 Humble" >> CHANGELOG.md
+        echo "- MoveIt2 (源码安装)" >> CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### 📞 技术支持" >> CHANGELOG.md
+        echo "- **Issues**: [GitHub Issues](https://github.com/Ding-Kaiyue/trajectory-planning/issues)" >> CHANGELOG.md
+        echo "- **Email**: kaiyue.ding@raysense.com" >> CHANGELOG.md
+
+        # 输出给后续步骤使用
+        echo 'CHANGELOG<<EOF' >> $GITHUB_OUTPUT
+        cat CHANGELOG.md >> $GITHUB_OUTPUT
+        echo 'EOF' >> $GITHUB_OUTPUT
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-artifacts
+        path: |
+          trajectory-planning-*.tar.gz
+          CHANGELOG.md
+
+  create-release:
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+    name: Create GitHub Release
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: release-artifacts
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.validate.outputs.tag_name }}
+        name: "Release ${{ needs.validate.outputs.version }}"
+        body: ${{ needs.build.outputs.CHANGELOG }}
+        draft: false
+        prerelease: false
+        files: |
+          trajectory-planning-*.tar.gz
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create tag (for manual dispatch)
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        TAG_NAME="${{ needs.validate.outputs.tag_name }}"
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git tag $TAG_NAME
+        git push origin $TAG_NAME
+
+  notify:
+    needs: [validate, create-release]
+    runs-on: ubuntu-22.04
+    name: Post-release Notifications
+    if: always()
+
+    steps:
+    - name: Notify success
+      if: needs.create-release.result == 'success'
+      run: |
+        echo "🎉 发布成功！"
+        echo "版本: ${{ needs.validate.outputs.version }}"
+        echo "下载地址: https://github.com/Ding-Kaiyue/trajectory-planning/releases/tag/${{ needs.validate.outputs.tag_name }}"
+
+    - name: Notify failure
+      if: needs.create-release.result == 'failure'
+      run: |
+        echo "❌ 发布失败！"
+        echo "请检查构建日志并修复问题。"
+        exit 1
