@@ -193,7 +193,7 @@ jobs:
           2> cppcheck-result.xml || true
 
     - name: Upload cppcheck results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: cppcheck-results
