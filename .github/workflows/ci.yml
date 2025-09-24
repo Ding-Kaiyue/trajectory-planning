@@ -164,7 +164,6 @@ jobs:
       with:
         clang-format-version: '14'
         check-path: 'src'
-        fallback-style: 'Google'
 
     - name: Setup ROS 2 for analysis
       uses: ros-tooling/setup-ros@v0.7

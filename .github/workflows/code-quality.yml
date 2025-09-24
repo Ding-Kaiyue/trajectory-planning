@@ -22,7 +22,6 @@ jobs:
       with:
         clang-format-version: '14'
         check-path: 'src'
-        fallback-style: 'Google'
         exclude-regex: '^src/.*/(build|install|log)/.*'
 
     - name: Check CMake format
@@ -159,18 +158,20 @@ jobs:
 
         # 检查头文件注释覆盖率
         HEADER_FILES=$(find src/trajectory_planning_v3/include -name "*.hpp" -o -name "*.h" | wc -l)
-        DOCUMENTED_HEADERS=$(grep -l -r "@brief\|@param\|@return\|/\*\*" src/trajectory_planning_v3/include || true | wc -l)
+        DOCUMENTED_HEADERS=$(grep -l -r "@brief\|@param\|@return\|/\*\*" src/trajectory_planning_v3/include 2>/dev/null | wc -l || echo "0")
 
         echo "头文件总数: $HEADER_FILES"
         echo "有文档的头文件: $DOCUMENTED_HEADERS"
 
-        if [ $HEADER_FILES -gt 0 ]; then
+        if [ "$HEADER_FILES" -gt 0 ] && [ "$DOCUMENTED_HEADERS" -ge 0 ]; then
           COVERAGE=$((DOCUMENTED_HEADERS * 100 / HEADER_FILES))
           echo "文档覆盖率: $COVERAGE%"
 
-          if [ $COVERAGE -lt 50 ]; then
+          if [ "$COVERAGE" -lt 50 ]; then
             echo "⚠️ 警告: 文档覆盖率低于50%"
           fi
+        else
+          echo "无法计算文档覆盖率"
         fi
 
     - name: Check README completeness
