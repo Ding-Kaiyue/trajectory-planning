@@ -7,13 +7,9 @@
 #include <vector>
 
 #include "hardware_driver/interface/robot_hardware.hpp"
-
 #include "trajectory_planning_v3/domain/entities/trajectory.hpp"
 
 namespace trajectory_planning::infrastructure::adapters {
-
-// 使用硬件驱动的类型
-using RobotHardware = hardware_driver::RobotHardware;
 
 /**
  * @brief 硬件适配器 - 桥接轨迹规划与硬件驱动

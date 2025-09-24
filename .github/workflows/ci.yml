@@ -84,15 +84,34 @@ jobs:
         </package>
         EOF
 
-        # 创建最小的 CMakeLists.txt
+        # 创建带有导出的 CMakeLists.txt
         cat > CMakeLists.txt << 'EOF'
         cmake_minimum_required(VERSION 3.8)
         project(hardware_driver)
         find_package(ament_cmake REQUIRED)
 
-        # 安装头文件
-        install(DIRECTORY include/ DESTINATION include/)
+        # 创建一个接口库
+        add_library(${PROJECT_NAME} INTERFACE)
+        target_include_directories(${PROJECT_NAME} INTERFACE
+          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+          $<INSTALL_INTERFACE:include>
+        )
 
+        # 创建别名目标以匹配真实硬件驱动的导出
+        add_library(${PROJECT_NAME}::hardware_driver_canfd ALIAS ${PROJECT_NAME})
+
+        # 安装和导出
+        install(DIRECTORY include/ DESTINATION include/)
+        install(TARGETS ${PROJECT_NAME}
+          EXPORT export_${PROJECT_NAME}
+          LIBRARY DESTINATION lib
+          ARCHIVE DESTINATION lib
+          RUNTIME DESTINATION bin
+          INCLUDES DESTINATION include
+        )
+
+        ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+        ament_export_dependencies()
         ament_package()
         EOF
 
@@ -254,7 +273,20 @@ jobs:
         cmake_minimum_required(VERSION 3.8)
         project(hardware_driver)
         find_package(ament_cmake REQUIRED)
+
+        add_library(${PROJECT_NAME} INTERFACE)
+        target_include_directories(${PROJECT_NAME} INTERFACE
+          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+          $<INSTALL_INTERFACE:include>
+        )
+        add_library(${PROJECT_NAME}::hardware_driver_canfd ALIAS ${PROJECT_NAME})
+
         install(DIRECTORY include/ DESTINATION include/)
+        install(TARGETS ${PROJECT_NAME}
+          EXPORT export_${PROJECT_NAME}
+          INCLUDES DESTINATION include
+        )
+        ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
         ament_package()
         EOF
 
