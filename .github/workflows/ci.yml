@@ -64,6 +64,11 @@ jobs:
         git clone https://github.com/aprotyas/trac_ik.git
         # Note: Your ROS2 adaptation plugin is already in the project src
 
+    - name: Install hardware_driver dependency
+      run: |
+        cd ~/ros_ws/src
+        git clone https://github.com/Ding-Kaiyue/hardware-driver.git
+
     - name: Install project dependencies
       run: |
         cd ~/ros_ws
@@ -74,9 +79,16 @@ jobs:
         cd ~/ros_ws
         source /opt/ros/${{ env.ROS_DISTRO }}/setup.bash
 
-        # 构建参数
+        # 首先构建依赖包
         colcon build \
-          --packages-up-to trajectory_planning_v3 \
+          --packages-select robot_interfaces hardware_driver \
+          --cmake-args \
+            -DCMAKE_BUILD_TYPE=Release \
+          --event-handlers console_direct+
+
+        # 然后构建主包
+        colcon build \
+          --packages-select trajectory_planning_v3 \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DUSE_TRAC_IK=${{ matrix.config.use_trac_ik }} \
@@ -136,6 +148,7 @@ jobs:
         mkdir -p ~/ros_ws/src
         cd ~/ros_ws/src
         ln -s $GITHUB_WORKSPACE ./trajectory_planning
+        git clone https://github.com/Ding-Kaiyue/hardware-driver.git
         cd ~/ros_ws
         rosdep install --from-paths src --ignore-src -r -y --skip-keys="warehouse_ros_mongo ruckig"
 
