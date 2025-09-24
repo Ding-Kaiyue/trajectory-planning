@@ -44,4 +44,4 @@ private:
     ExecutionResult createSuccessResult(const std::string& message = "");
 };
 
-} // namespace trajectory_planning::application::services
+}  // namespace trajectory_planning::application::services
