@@ -164,8 +164,12 @@ ament_target_dependencies(${PROJECT_NAME}
   control_msgs
   robot_interfaces
   ament_index_cpp
-  hardware_driver 
 )
+
+# 条件性添加硬件驱动依赖
+if(HARDWARE_DRIVER_AVAILABLE)
+    ament_target_dependencies(${PROJECT_NAME} hardware_driver)
+endif()
 
 # Add TRAC-IK dependency if available
 if(TRAC_IK_AVAILABLE)
