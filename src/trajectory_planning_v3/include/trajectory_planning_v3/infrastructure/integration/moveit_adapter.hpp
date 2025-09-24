@@ -36,7 +36,7 @@ public:
     std::vector<std::string> getJointNames() const;
     geometry_msgs::msg::PoseStamped getCurrentPose() const;
     geometry_msgs::msg::Pose getCurrentPoseFromTF() const;
-    std::vector<std::pair<double, double>> getJointLimits() const;
+    std::vector<std::pair<double, double>> getJointLimits(const std::string& arm_type = "arm620") const;
 
     // ===== 状态设置 =====
     bool setStartState(const std::vector<double>& joint_values);

@@ -132,13 +132,15 @@ geometry_msgs::msg::Pose MoveItAdapter::getCurrentPoseFromTF() const {
     return current_pose;
 }
 
-std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits() const {
+std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits(const std::string& arm_type) const {
     std::vector<std::pair<double, double>> limits;
 
     // 首先尝试从YAML文件直接读取关节限制
     try {
         std::string package_path = ament_index_cpp::get_package_share_directory("trajectory_planning_v3");
-        std::string yaml_path = package_path + "/config/joint_limits.yaml";
+        std::string yaml_path = package_path + "/config/" + arm_type + "_joint_limits.yaml";
+
+        RCLCPP_INFO(node_->get_logger(), "Loading joint limits for %s from: %s", arm_type.c_str(), yaml_path.c_str());
 
         YAML::Node config = YAML::LoadFile(yaml_path);
 
@@ -165,56 +167,12 @@ std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits() const {
                 }
             }
 
-            RCLCPP_INFO(node_->get_logger(), "Successfully loaded joint limits from YAML file: %zu joints", limits.size());
+            RCLCPP_INFO(node_->get_logger(), "Successfully loaded joint limits for %s from YAML file: %zu joints", arm_type.c_str(), limits.size());
             return limits;
         }
     } catch (const std::exception& e) {
-        RCLCPP_WARN(node_->get_logger(), "Failed to load joint limits from YAML: %s. Falling back to MoveIt.", e.what());
+        RCLCPP_WARN(node_->get_logger(), "Failed to load joint limits from YAML: %s.", e.what());
     }
-
-    // 如果YAML读取失败，回退到MoveIt方式（但添加安全检查）
-    if (!move_group_) {
-        RCLCPP_ERROR(node_->get_logger(), "MoveGroup not initialized and YAML fallback failed");
-        return limits;
-    }
-
-    try {
-        // 从MoveIt获取关节模型（添加安全检查）
-        auto current_state = move_group_->getCurrentState();
-        if (!current_state) {
-            RCLCPP_ERROR(node_->get_logger(), "Failed to get current robot state");
-            return limits;
-        }
-
-        const auto& joint_model_group = current_state->getJointModelGroup(move_group_->getName());
-        if (!joint_model_group) {
-            RCLCPP_ERROR(node_->get_logger(), "Failed to get joint model group");
-            return limits;
-        }
-
-        // 获取活动关节
-        const auto& joint_models = joint_model_group->getActiveJointModels();
-
-        for (const auto& joint_model : joint_models) {
-            if (joint_model->getType() == moveit::core::JointModel::REVOLUTE ||
-                joint_model->getType() == moveit::core::JointModel::PRISMATIC) {
-
-                const auto& bounds = joint_model->getVariableBounds();
-                if (!bounds.empty()) {
-                    double lower = bounds[0].min_position_;
-                    double upper = bounds[0].max_position_;
-                    limits.emplace_back(lower, upper);
-                } else {
-                    // 如果没有限制信息，使用默认值
-                    limits.emplace_back(-M_PI, M_PI);
-                }
-            }
-        }
-    } catch (const std::exception& e) {
-        RCLCPP_ERROR(node_->get_logger(), "Exception while getting joint limits from MoveIt: %s", e.what());
-        return limits;
-    }
-
     return limits;
 }
 

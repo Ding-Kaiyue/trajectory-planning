@@ -61,6 +61,7 @@ public:
     JointConstrainedNode() : Node("joint_constrained_node") {
         // ---- 1. 声明参数 ----
         this->declare_parameter<std::string>("move_group", "arm");
+        this->declare_parameter<std::string>("arm_type", "arm620");
         this->declare_parameter<std::string>("planner_id", "RRTConnectkConfigDefault");
         this->declare_parameter<double>("planning_time", 5.0);
         this->declare_parameter<double>("velocity_scaling", 0.2);
@@ -96,9 +97,11 @@ public:
 
             // 初始化应用服务
             motion_planning_service_ = std::make_shared<MotionPlanningService>(
-                nullptr, nullptr, nullptr, joint_constrained_strategy_,
-                moveit_adapter_, this->get_logger()
+                moveit_adapter_, shared_from_this()
             );
+
+            // 注册需要的策略
+            motion_planning_service_->registerJointConstrainedStrategy(joint_constrained_strategy_);
 
             trajectory_execution_service_ = std::make_shared<TrajectoryExecutionService>(
                 trajectory_executor_, this->get_logger()

@@ -4,18 +4,35 @@
 namespace trajectory_planning::application::services {
 
 MotionPlanningService::MotionPlanningService(
-    std::shared_ptr<MoveJPlanningStrategy> movej_strategy,
-    std::shared_ptr<MoveLPlanningStrategy> movel_strategy,
-    std::shared_ptr<MoveCPlanningStrategy> movec_strategy,
-    std::shared_ptr<JointConstrainedPlanningStrategy> joint_constrained_strategy,
     std::shared_ptr<MoveItAdapter> moveit_adapter,
-    rclcpp::Logger logger)
-    : movej_strategy_(movej_strategy)
-    , movel_strategy_(movel_strategy)
-    , movec_strategy_(movec_strategy)
-    , joint_constrained_strategy_(joint_constrained_strategy)
+    rclcpp::Node::SharedPtr node)
+    : movej_strategy_(nullptr)
+    , movel_strategy_(nullptr)
+    , movec_strategy_(nullptr)
+    , joint_constrained_strategy_(nullptr)
     , moveit_adapter_(moveit_adapter)
-    , logger_(logger) {
+    , node_(node)
+    , logger_(node->get_logger()) {
+}
+
+void MotionPlanningService::registerMoveJStrategy(std::shared_ptr<MoveJPlanningStrategy> strategy) {
+    movej_strategy_ = strategy;
+    RCLCPP_INFO(logger_, "MoveJ strategy registered");
+}
+
+void MotionPlanningService::registerMoveLStrategy(std::shared_ptr<MoveLPlanningStrategy> strategy) {
+    movel_strategy_ = strategy;
+    RCLCPP_INFO(logger_, "MoveL strategy registered");
+}
+
+void MotionPlanningService::registerMoveCStrategy(std::shared_ptr<MoveCPlanningStrategy> strategy) {
+    movec_strategy_ = strategy;
+    RCLCPP_INFO(logger_, "MoveC strategy registered");
+}
+
+void MotionPlanningService::registerJointConstrainedStrategy(std::shared_ptr<JointConstrainedPlanningStrategy> strategy) {
+    joint_constrained_strategy_ = strategy;
+    RCLCPP_INFO(logger_, "JointConstrained strategy registered");
 }
 
 PlanningResult MotionPlanningService::planJointMotion(const sensor_msgs::msg::JointState& goal) {
@@ -109,8 +126,15 @@ PlanningResult MotionPlanningService::planConstrainedMotion(const robot_interfac
             }
         }
 
+        // 获取机械臂类型参数
+        std::string arm_type = "arm620";  // 默认值
+        if (node_->has_parameter("arm_type")) {
+            arm_type = node_->get_parameter("arm_type").as_string();
+        }
+
         Trajectory trajectory = joint_constrained_strategy_->plan(
             request.goal_pose,
+            arm_type,
             JointConstrainedPlanningStrategy::PlanningType::INTELLIGENT,
             request.max_attempts);
 

@@ -89,12 +89,14 @@ public:
     /**
      * @brief 规划到目标位姿
      * @param goal_pose 目标位姿
+     * @param arm_type 机械臂类型（用于加载对应的关节限制）
      * @param planning_type 规划类型
      * @param max_attempts 最大尝试次数（用于寻找满足约束的解）
      * @return 轨迹
      */
     domain::entities::Trajectory plan(
         const geometry_msgs::msg::Pose& goal_pose,
+        const std::string& arm_type = "arm620",
         PlanningType planning_type = PlanningType::INTELLIGENT,
         int max_attempts = 5);
 
@@ -110,7 +112,7 @@ public:
      * @param log_level 日志级别 (0=无日志, 1=INFO/WARN, 2=ERROR)
      * @return 约束是否可行
      */
-    bool validateAllConstraints(int log_level = 2) const;
+    bool validateAllConstraints(const std::string& arm_type, int log_level = 2) const;
 
 private:
     infrastructure::integration::MoveItAdapter& moveit_adapter_;
@@ -168,10 +170,11 @@ private:
 
     /**
      * @brief 生成不同的种子点配置
+     * @param arm_type 机械臂类型
      * @param attempt_index 尝试索引
      * @return 种子点关节角度，nullopt表示使用默认
      */
-    std::optional<std::vector<double>> generateSeedConfiguration(int attempt_index) const;
+    std::optional<std::vector<double>> generateSeedConfiguration(const std::string& arm_type, int attempt_index) const;
 
     /**
      * @brief 尝试使用指定种子点进行规划

@@ -54,12 +54,12 @@ bool JointConstrainedPlanningStrategy::validateConstraints(const std::vector<dou
     return true;
 }
 
-bool JointConstrainedPlanningStrategy::validateAllConstraints(int log_level) const {
+bool JointConstrainedPlanningStrategy::validateAllConstraints(const std::string& arm_type, int log_level) const {
     if (constraints_.empty()) {
         return true; // 没有约束，总是可行
     }
 
-    auto joint_limits = moveit_adapter_.getJointLimits();
+    auto joint_limits = moveit_adapter_.getJointLimits(arm_type);
     if (joint_limits.empty()) {
         if (log_level >= 1) {
             RCLCPP_WARN(rclcpp::get_logger("ConstrainedPlanningStrategy"),
@@ -243,11 +243,12 @@ std::optional<std::pair<double, double>> JointConstrainedPlanningStrategy::getEf
 
 domain::entities::Trajectory JointConstrainedPlanningStrategy::plan(
     const geometry_msgs::msg::Pose& goal_pose,
+    const std::string& arm_type,
     PlanningType planning_type,
     int max_attempts) {
 
     // 预检查约束的有效性
-    if (!validateAllConstraints(2)) { // ERROR level logging
+    if (!validateAllConstraints(arm_type, 2)) { // ERROR level logging
         RCLCPP_ERROR(rclcpp::get_logger("ConstrainedPlanningStrategy"),
                     "Planning aborted: Constraints conflict with joint limits or each other. Check error messages above.");
         return {}; // 直接返回空轨迹
@@ -262,7 +263,7 @@ domain::entities::Trajectory JointConstrainedPlanningStrategy::plan(
 
     // 尝试多次规划，寻找最佳解
     for (int attempt = 0; attempt < max_attempts; ++attempt) {
-        auto seed_config = generateSeedConfiguration(attempt);
+        auto seed_config = generateSeedConfiguration(arm_type, attempt);
 
         // 只在第一次尝试时使用种子配置，避免重复调用setStartState导致时间戳问题
         auto actual_seed_config = (attempt == 0) ? seed_config : std::nullopt;
@@ -445,13 +446,13 @@ double JointConstrainedPlanningStrategy::computeConstraintScore(
     return std::max(0.0, 1.0 / (1.0 + weighted_violation_ratio)); // 使用倒数函数，避免线性下降
 }
 
-std::optional<std::vector<double>> JointConstrainedPlanningStrategy::generateSeedConfiguration(int attempt_index) const {
+std::optional<std::vector<double>> JointConstrainedPlanningStrategy::generateSeedConfiguration(const std::string& arm_type, int attempt_index) const {
     if (attempt_index == 0) {
         return std::nullopt; // 第一次尝试使用默认配置
     }
 
     // 从MoveItAdapter获取关节限制
-    auto joint_limits = moveit_adapter_.getJointLimits();
+    auto joint_limits = moveit_adapter_.getJointLimits(arm_type);
     if (joint_limits.empty()) {
         RCLCPP_WARN(rclcpp::get_logger("ConstrainedPlanningStrategy"),
                     "No joint limits available, using default range");

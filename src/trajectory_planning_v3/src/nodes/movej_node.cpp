@@ -57,9 +57,11 @@ public:
 
             // 初始化应用服务
             motion_planning_service_ = std::make_shared<MotionPlanningService>(
-                movej_strategy, nullptr, nullptr, nullptr,
-                moveit_adapter_, this->get_logger()
+                moveit_adapter_, shared_from_this()
             );
+
+            // 注册需要的策略
+            motion_planning_service_->registerMoveJStrategy(movej_strategy);
 
             trajectory_execution_service_ = std::make_shared<TrajectoryExecutionService>(
                 trajectory_executor_, this->get_logger()

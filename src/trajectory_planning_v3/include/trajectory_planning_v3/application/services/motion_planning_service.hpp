@@ -32,14 +32,17 @@ struct PlanningResult {
 
 class MotionPlanningService {
 public:
+    // 简化的构造函数
     MotionPlanningService(
-        std::shared_ptr<MoveJPlanningStrategy> movej_strategy,
-        std::shared_ptr<MoveLPlanningStrategy> movel_strategy,
-        std::shared_ptr<MoveCPlanningStrategy> movec_strategy,
-        std::shared_ptr<JointConstrainedPlanningStrategy> joint_constrained_strategy,
         std::shared_ptr<MoveItAdapter> moveit_adapter,
-        rclcpp::Logger logger
+        rclcpp::Node::SharedPtr node
     );
+
+    // 策略注册方法
+    void registerMoveJStrategy(std::shared_ptr<MoveJPlanningStrategy> strategy);
+    void registerMoveLStrategy(std::shared_ptr<MoveLPlanningStrategy> strategy);
+    void registerMoveCStrategy(std::shared_ptr<MoveCPlanningStrategy> strategy);
+    void registerJointConstrainedStrategy(std::shared_ptr<JointConstrainedPlanningStrategy> strategy);
 
     // 关节空间规划
     PlanningResult planJointMotion(const sensor_msgs::msg::JointState& goal);
@@ -60,6 +63,7 @@ private:
     std::shared_ptr<JointConstrainedPlanningStrategy> joint_constrained_strategy_;
     std::shared_ptr<MoveItAdapter> moveit_adapter_;
 
+    rclcpp::Node::SharedPtr node_;
     rclcpp::Logger logger_;
 
     // 辅助方法
