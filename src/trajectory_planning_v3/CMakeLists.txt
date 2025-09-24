@@ -37,22 +37,7 @@ find_package(robot_interfaces REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 
-# Optional hardware_driver dependency
-option(USE_HARDWARE_DRIVER "Enable hardware driver support" ON)
-if(USE_HARDWARE_DRIVER)
-    find_package(hardware_driver QUIET)
-    if(hardware_driver_FOUND)
-        message(STATUS "Hardware driver found, enabling hardware support")
-        add_compile_definitions(USE_HARDWARE_DRIVER)
-        set(HARDWARE_DRIVER_AVAILABLE TRUE)
-    else()
-        message(WARNING "Hardware driver requested but not found, disabling hardware support")
-        set(HARDWARE_DRIVER_AVAILABLE FALSE)
-    endif()
-else()
-    message(STATUS "Hardware driver support disabled for CI environment")
-    set(HARDWARE_DRIVER_AVAILABLE FALSE)
-endif()
+find_package(hardware_driver REQUIRED)
 
 # Conditional TRAC-IK dependency
 if(USE_TRAC_IK)
@@ -164,12 +149,8 @@ ament_target_dependencies(${PROJECT_NAME}
   control_msgs
   robot_interfaces
   ament_index_cpp
+  hardware_driver
 )
-
-# 条件性添加硬件驱动依赖
-if(HARDWARE_DRIVER_AVAILABLE)
-    ament_target_dependencies(${PROJECT_NAME} hardware_driver)
-endif()
 
 # Add TRAC-IK dependency if available
 if(TRAC_IK_AVAILABLE)
@@ -229,9 +210,8 @@ ament_target_dependencies(trajectory_planning_node
   robot_interfaces
 )
 
-# 条件性构建硬件相关目标
-if(HARDWARE_DRIVER_AVAILABLE)
-    # Hardware adapter test executable
+# Hardware adapter test executable (仅在有实际硬件驱动时构建)
+if(TARGET hardware_driver::hardware_driver_canfd)
     add_executable(hardware_adapter_test test/hardware_adapter_test.cpp)
     target_link_libraries(hardware_adapter_test ${PROJECT_NAME} hardware_driver::hardware_driver_canfd)
     ament_target_dependencies(hardware_adapter_test
@@ -249,9 +229,11 @@ if(HARDWARE_DRIVER_AVAILABLE)
       rclcpp_action
       control_msgs
     )
+
+    set(HAS_HARDWARE_TARGETS TRUE)
 else()
-    # CI环境下跳过硬件相关目标
-    message(STATUS "Skipping hardware-dependent targets in CI environment")
+    message(STATUS "Real hardware driver not found, skipping hardware-dependent targets")
+    set(HAS_HARDWARE_TARGETS FALSE)
 endif()
 
 # Install targets
@@ -271,8 +253,8 @@ set(INSTALL_TARGETS
   trajectory_planning_node
 )
 
-# 如果硬件驱动可用，添加硬件相关节点
-if(HARDWARE_DRIVER_AVAILABLE)
+# 如果构建了硬件相关目标，添加到安装列表
+if(HAS_HARDWARE_TARGETS)
     list(APPEND INSTALL_TARGETS hardware_trajectory_controller_node)
 endif()
 

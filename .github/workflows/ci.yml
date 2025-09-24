@@ -64,11 +64,73 @@ jobs:
         git clone https://github.com/aprotyas/trac_ik.git
         # Note: Your ROS2 adaptation plugin is already in the project src
 
-    # 注释掉硬件驱动依赖，因为它是独立的C++库，不适用于CI环境
-    # - name: Install hardware_driver dependency
-    #   run: |
-    #     cd ~/ros_ws/src
-    #     git clone https://github.com/Ding-Kaiyue/hardware-driver.git
+    - name: Create mock hardware_driver package for CI
+      run: |
+        cd ~/ros_ws/src
+        mkdir -p mock_hardware_driver
+        cd mock_hardware_driver
+
+        # 创建最小的 package.xml
+        cat > package.xml << 'EOF'
+        <?xml version="1.0"?>
+        <package format="3">
+          <name>hardware_driver</name>
+          <version>0.0.0</version>
+          <description>Mock hardware_driver package for CI</description>
+          <maintainer email="ci@example.com">CI</maintainer>
+          <license>MIT</license>
+          <buildtool_depend>ament_cmake</buildtool_depend>
+          <export><build_type>ament_cmake</build_type></export>
+        </package>
+        EOF
+
+        # 创建最小的 CMakeLists.txt
+        cat > CMakeLists.txt << 'EOF'
+        cmake_minimum_required(VERSION 3.8)
+        project(hardware_driver)
+        find_package(ament_cmake REQUIRED)
+
+        # 安装头文件
+        install(DIRECTORY include/ DESTINATION include/)
+
+        ament_package()
+        EOF
+
+        # 创建mock头文件结构
+        mkdir -p include/hardware_driver/interface
+        cat > include/hardware_driver/interface/robot_hardware.hpp << 'EOF'
+        #pragma once
+        #include <vector>
+        #include <string>
+        #include <memory>
+
+        namespace hardware_driver {
+
+        // Mock轨迹类型
+        struct Trajectory {
+            struct Point {
+                std::vector<double> positions;
+                std::vector<double> velocities;
+                std::vector<double> accelerations;
+                double time_from_start;
+            };
+            std::vector<Point> points;
+        };
+
+        // Mock RobotHardware类
+        class RobotHardware {
+        public:
+            RobotHardware() = default;
+            virtual ~RobotHardware() = default;
+
+            // Mock方法 - 仅为编译通过
+            virtual bool initialize() { return true; }
+            virtual bool isConnected() { return false; }
+            virtual void executeTrajectory(const Trajectory&) {}
+        };
+
+        } // namespace hardware_driver
+        EOF
 
     - name: Install project dependencies
       run: |
@@ -84,31 +146,30 @@ jobs:
         echo "=== 工作空间结构 ==="
         find src -name "package.xml" | head -10
 
-        # 首先构建接口包
-        echo "=== 构建 robot_interfaces ==="
+        # 首先构建依赖包（包含mock hardware_driver）
+        echo "=== 构建依赖包 ==="
         colcon build \
-          --packages-select robot_interfaces \
+          --packages-select robot_interfaces hardware_driver \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
           --event-handlers console_direct+
 
         # 检查构建结果
         if [ $? -ne 0 ]; then
-          echo "ERROR: robot_interfaces 构建失败"
+          echo "ERROR: 依赖包构建失败"
           exit 1
         fi
 
-        # source 接口包环境
+        # source 依赖包环境
         source install/setup.bash
 
-        # 然后构建主包（跳过硬件驱动依赖）
+        # 然后构建主包（使用mock hardware_driver）
         echo "=== 构建 trajectory_planning_v3 ==="
         colcon build \
           --packages-select trajectory_planning_v3 \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DUSE_TRAC_IK=${{ matrix.config.use_trac_ik }} \
-            -DUSE_HARDWARE_DRIVER=OFF \
           --event-handlers console_direct+
 
     - name: Run tests
@@ -174,9 +235,62 @@ jobs:
         cd ~/ros_ws
         source /opt/ros/${{ env.ROS_DISTRO }}/setup.bash
 
-        # 先构建依赖包（跳过硬件驱动）
+        # 创建mock hardware_driver (重复逻辑)
+        mkdir -p src/mock_hardware_driver
+        cd src/mock_hardware_driver
+        cat > package.xml << 'EOF'
+        <?xml version="1.0"?>
+        <package format="3">
+          <name>hardware_driver</name>
+          <version>0.0.0</version>
+          <description>Mock hardware_driver package for CI</description>
+          <maintainer email="ci@example.com">CI</maintainer>
+          <license>MIT</license>
+          <buildtool_depend>ament_cmake</buildtool_depend>
+          <export><build_type>ament_cmake</build_type></export>
+        </package>
+        EOF
+        cat > CMakeLists.txt << 'EOF'
+        cmake_minimum_required(VERSION 3.8)
+        project(hardware_driver)
+        find_package(ament_cmake REQUIRED)
+        install(DIRECTORY include/ DESTINATION include/)
+        ament_package()
+        EOF
+
+        # 创建同样的mock头文件
+        mkdir -p include/hardware_driver/interface
+        cat > include/hardware_driver/interface/robot_hardware.hpp << 'EOF'
+        #pragma once
+        #include <vector>
+        #include <string>
+        #include <memory>
+
+        namespace hardware_driver {
+        struct Trajectory {
+            struct Point {
+                std::vector<double> positions;
+                std::vector<double> velocities;
+                std::vector<double> accelerations;
+                double time_from_start;
+            };
+            std::vector<Point> points;
+        };
+        class RobotHardware {
+        public:
+            RobotHardware() = default;
+            virtual ~RobotHardware() = default;
+            virtual bool initialize() { return true; }
+            virtual bool isConnected() { return false; }
+            virtual void executeTrajectory(const Trajectory&) {}
+        };
+        } // namespace hardware_driver
+        EOF
+        cd ~/ros_ws
+
+        # 构建依赖包（包含mock hardware_driver）
         colcon build \
-          --packages-select robot_interfaces \
+          --packages-select robot_interfaces hardware_driver \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
@@ -185,13 +299,12 @@ jobs:
         # source 依赖包环境
         source install/setup.bash
 
-        # 快速构建检查（不编译测试，跳过硬件驱动）
+        # 快速构建检查（不编译测试）
         colcon build \
           --packages-select trajectory_planning_v3 \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
-            -DUSE_HARDWARE_DRIVER=OFF \
           --event-handlers console_direct+
 
   analyze:
