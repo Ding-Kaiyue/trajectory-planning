@@ -11,26 +11,26 @@ namespace trajectory_planning::domain::value_objects {
  */
 class EndEffectorVelocity {
 public:
-    EndEffectorVelocity(const std::array<double, 6>& velocity)
-        : velocity_(velocity) {}
+	EndEffectorVelocity(const std::array<double, 6>& velocity)
+	    : velocity_(velocity) {}
 
-    EndEffectorVelocity() : velocity_({0.0, 0.0, 0.0, 0.0, 0.0, 0.0}) {}
-    
-    const std::array<double, 6>& velocity() const { return velocity_; }
+	EndEffectorVelocity() : velocity_({0.0, 0.0, 0.0, 0.0, 0.0, 0.0}) {}
 
-    std::string to_string() const {
-        std::ostringstream oss;
-        oss << "EndEffectorVelocity([";
-        for (size_t i = 0; i < 6; ++i) {
-            oss << velocity_[i];
-            if (i < 5) oss << ", ";
-        }
-        oss << "])";
-        return oss.str();
-    }
+	const std::array<double, 6>& velocity() const { return velocity_; }
+
+	std::string to_string() const {
+		std::ostringstream oss;
+		oss << "EndEffectorVelocity([";
+		for (size_t i = 0; i < 6; ++i) {
+			oss << velocity_[i];
+			if (i < 5) oss << ", ";
+		}
+		oss << "])";
+		return oss.str();
+	}
 
 private:
-    std::array<double, 6> velocity_;
+	std::array<double, 6> velocity_;
 };
 
-} // namespace trajectory_planning::domain::value_objects
+}  // namespace trajectory_planning::domain::value_objects

@@ -11,16 +11,16 @@ using trajectory_planning::domain::entities::Trajectory;
  */
 class TrajectoryControlService {
 public:
-    explicit TrajectoryControlService(Trajectory& trajectory);
+	explicit TrajectoryControlService(Trajectory& trajectory);
 
-    void start();
-    void pause();
-    void resume();
-    void cancel();
-    void complete();
+	void start();
+	void pause();
+	void resume();
+	void cancel();
+	void complete();
 
 private:
-    Trajectory& trajectory_;
+	Trajectory& trajectory_;
 };
 
-} // namespace trajectory_planning_v3::domain::services
+}  // namespace trajectory_planning::domain::services

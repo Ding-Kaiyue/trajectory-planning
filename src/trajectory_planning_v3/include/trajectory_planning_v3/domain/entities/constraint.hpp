@@ -1,8 +1,8 @@
 #pragma once
 
-#include <vector>
-#include <string>
 #include <limits>
+#include <string>
+#include <vector>
 
 namespace trajectory_planning::domain::entities {
 
@@ -11,27 +11,27 @@ namespace trajectory_planning::domain::entities {
  */
 class Constraint {
 public:
-    Constraint() = default;
+	Constraint() = default;
 
-    Constraint(const std::vector<double>& pos_limits_min,
-               const std::vector<double>& pos_limits_max,
-               const std::vector<double>& vel_limits,
-               const std::vector<double>& acc_limits);
+	Constraint(const std::vector<double>& pos_limits_min,
+	           const std::vector<double>& pos_limits_max,
+	           const std::vector<double>& vel_limits,
+	           const std::vector<double>& acc_limits);
 
-    const std::vector<double>& position_limits_min() const;
-    const std::vector<double>& position_limits_max() const;
-    const std::vector<double>& velocity_limits() const;
-    const std::vector<double>& acceleration_limits() const;
+	const std::vector<double>& position_limits_min() const;
+	const std::vector<double>& position_limits_max() const;
+	const std::vector<double>& velocity_limits() const;
+	const std::vector<double>& acceleration_limits() const;
 
-    bool is_within_limits(const std::vector<double>& positions,
-                          const std::vector<double>& velocities,
-                          const std::vector<double>& accelerations) const;
+	bool is_within_limits(const std::vector<double>& positions,
+	                      const std::vector<double>& velocities,
+	                      const std::vector<double>& accelerations) const;
 
 private:
-    std::vector<double> pos_limits_min_;
-    std::vector<double> pos_limits_max_;
-    std::vector<double> vel_limits_;
-    std::vector<double> acc_limits_;
+	std::vector<double> pos_limits_min_;
+	std::vector<double> pos_limits_max_;
+	std::vector<double> vel_limits_;
+	std::vector<double> acc_limits_;
 };
 
 }  // namespace trajectory_planning::domain::entities

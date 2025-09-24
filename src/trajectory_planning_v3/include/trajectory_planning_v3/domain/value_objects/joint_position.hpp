@@ -1,9 +1,9 @@
 #pragma once
 
-#include <vector>
+#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <sstream>
+#include <vector>
 
 namespace trajectory_planning::domain::value_objects {
 
@@ -12,35 +12,34 @@ namespace trajectory_planning::domain::value_objects {
  */
 class JointPosition {
 public:
-    explicit JointPosition(std::vector<double> values) 
-        : values_(std::move(values)) 
-    {
-        if (values_.empty()) {
-            throw std::invalid_argument("JointPosition cannot be empty");
-        }
-    }
+	explicit JointPosition(std::vector<double> values)
+	    : values_(std::move(values)) {
+		if (values_.empty()) {
+			throw std::invalid_argument("JointPosition cannot be empty");
+		}
+	}
 
-    JointPosition() = default;
-    
-    const std::vector<double>& values() const { return values_; }
+	JointPosition() = default;
 
-    size_t size() const { return values_.size(); }
+	const std::vector<double>& values() const { return values_; }
 
-    double operator[](size_t idx) const { return values_.at(idx); }
+	size_t size() const { return values_.size(); }
 
-    std::string to_string() const {
-        std::ostringstream oss;
-        oss << "JointPosition(";
-        for (size_t i = 0; i < values_.size(); ++i) {
-            oss << values_[i];
-            if (i + 1 < values_.size()) oss << ", ";
-        }
-        oss << ")";
-        return oss.str();
-    }
+	double operator[](size_t idx) const { return values_.at(idx); }
+
+	std::string to_string() const {
+		std::ostringstream oss;
+		oss << "JointPosition(";
+		for (size_t i = 0; i < values_.size(); ++i) {
+			oss << values_[i];
+			if (i + 1 < values_.size()) oss << ", ";
+		}
+		oss << ")";
+		return oss.str();
+	}
 
 private:
-    std::vector<double> values_;
+	std::vector<double> values_;
 };
 
-} // namespace trajectory_planning::domain::value_objects
+}  // namespace trajectory_planning::domain::value_objects

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <sstream>
 
 namespace trajectory_planning::domain::value_objects {
 
@@ -11,25 +11,25 @@ namespace trajectory_planning::domain::value_objects {
  */
 class Duration {
 public:
-    explicit Duration(double seconds) : seconds_(seconds) {
-        if (seconds_ < 0.0) {
-            throw std::invalid_argument("Duration cannot be negative");
-        }
-    }
+	explicit Duration(double seconds) : seconds_(seconds) {
+		if (seconds_ < 0.0) {
+			throw std::invalid_argument("Duration cannot be negative");
+		}
+	}
 
-    // 默认构造函数，初始化为0秒
-    Duration() : seconds_(0.0) {}
+	// 默认构造函数，初始化为0秒
+	Duration() : seconds_(0.0) {}
 
-    double seconds() const { return seconds_; }
+	double seconds() const { return seconds_; }
 
-    std::string to_string() const {
-        std::ostringstream oss;
-        oss << "Duration(" << seconds_ << "s)";
-        return oss.str();
-    }
+	std::string to_string() const {
+		std::ostringstream oss;
+		oss << "Duration(" << seconds_ << "s)";
+		return oss.str();
+	}
 
 private:
-    double seconds_;
+	double seconds_;
 };
 
-} // namespace trajectory_planning::domain::value_objects
+}  // namespace trajectory_planning::domain::value_objects
