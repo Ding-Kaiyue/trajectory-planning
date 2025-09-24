@@ -220,6 +220,16 @@ ros2 param list | grep move_group
 - 选择更安全的运动路径
 
 
+## 📚 文档
+
+本README提供了快速开始指南。更多详细信息请访问：
+
+- **[📖 文档中心](docs/README.md)** - 完整的项目文档门户
+- **[🏗️ 架构文档](docs/ARCHITECTURE.md)** - DDD架构设计理念
+- **[👨‍💻 开发者指南](docs/DEVELOPER.md)** - 深度开发指南
+- **[📋 代码规范](docs/CODE_STYLE.md)** - 代码风格指南
+- **[📊 规划策略](docs/PLANNING_STRATEGIES.md)** - 四种策略详解
+
 ## 📄 许可证
 
 MIT License - 详见 [LICENSE](LICENSE) 文件

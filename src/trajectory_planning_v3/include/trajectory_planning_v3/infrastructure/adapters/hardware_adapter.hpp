@@ -6,10 +6,31 @@
 #include <mutex>
 #include <vector>
 
+#ifdef USE_HARDWARE_DRIVER
 #include "hardware_driver/interface/robot_hardware.hpp"
+#endif
+
 #include "trajectory_planning_v3/domain/entities/trajectory.hpp"
 
 namespace trajectory_planning::infrastructure::adapters {
+
+#ifdef USE_HARDWARE_DRIVER
+// 前向声明
+using RobotHardware = hardware_driver::RobotHardware;
+#else
+// CI环境下的模拟类型
+class RobotHardware {};
+// 模拟硬件轨迹类型
+struct Trajectory {
+    struct Point {
+        std::vector<double> positions;
+        std::vector<double> velocities;
+        std::vector<double> accelerations;
+        double time_from_start;
+    };
+    std::vector<Point> points;
+};
+#endif
 
 /**
  * @brief 硬件适配器 - 桥接轨迹规划与硬件驱动
@@ -94,8 +115,13 @@ private:
 	 * @param traj 输入轨迹
 	 * @return 转换后的轨迹
 	 */
+#ifdef USE_HARDWARE_DRIVER
 	::Trajectory convertTrajectory(
 	    const domain::entities::Trajectory& traj) const;
+#else
+	Trajectory convertTrajectory(
+	    const domain::entities::Trajectory& traj) const;
+#endif
 
 	// === 成员变量 ===
 

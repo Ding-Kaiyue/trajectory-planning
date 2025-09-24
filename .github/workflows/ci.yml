@@ -64,10 +64,11 @@ jobs:
         git clone https://github.com/aprotyas/trac_ik.git
         # Note: Your ROS2 adaptation plugin is already in the project src
 
-    - name: Install hardware_driver dependency
-      run: |
-        cd ~/ros_ws/src
-        git clone https://github.com/Ding-Kaiyue/hardware-driver.git
+    # 注释掉硬件驱动依赖，因为它是独立的C++库，不适用于CI环境
+    # - name: Install hardware_driver dependency
+    #   run: |
+    #     cd ~/ros_ws/src
+    #     git clone https://github.com/Ding-Kaiyue/hardware-driver.git
 
     - name: Install project dependencies
       run: |
@@ -91,36 +92,23 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
           --event-handlers console_direct+
 
-        # 检查是否构建成功
-        if [ ! -f "install/robot_interfaces/share/robot_interfaces/package.xml" ]; then
+        # 检查构建结果
+        if [ $? -ne 0 ]; then
           echo "ERROR: robot_interfaces 构建失败"
           exit 1
         fi
 
-        # 构建硬件驱动包
-        echo "=== 构建 hardware_driver ==="
-        colcon build \
-          --packages-select hardware_driver \
-          --cmake-args \
-            -DCMAKE_BUILD_TYPE=Release \
-          --event-handlers console_direct+
-
-        # 检查是否构建成功
-        if [ ! -f "install/hardware_driver/share/hardware_driver/package.xml" ]; then
-          echo "ERROR: hardware_driver 构建失败"
-          exit 1
-        fi
-
-        # source 依赖包环境
+        # source 接口包环境
         source install/setup.bash
 
-        # 然后构建主包
+        # 然后构建主包（跳过硬件驱动依赖）
         echo "=== 构建 trajectory_planning_v3 ==="
         colcon build \
           --packages-select trajectory_planning_v3 \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DUSE_TRAC_IK=${{ matrix.config.use_trac_ik }} \
+            -DUSE_HARDWARE_DRIVER=OFF \
           --event-handlers console_direct+
 
     - name: Run tests
@@ -186,9 +174,9 @@ jobs:
         cd ~/ros_ws
         source /opt/ros/${{ env.ROS_DISTRO }}/setup.bash
 
-        # 先构建依赖包
+        # 先构建依赖包（跳过硬件驱动）
         colcon build \
-          --packages-select robot_interfaces hardware_driver \
+          --packages-select robot_interfaces \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
@@ -197,12 +185,13 @@ jobs:
         # source 依赖包环境
         source install/setup.bash
 
-        # 快速构建检查（不编译测试）
+        # 快速构建检查（不编译测试，跳过硬件驱动）
         colcon build \
           --packages-select trajectory_planning_v3 \
           --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
+            -DUSE_HARDWARE_DRIVER=OFF \
           --event-handlers console_direct+
 
   analyze:

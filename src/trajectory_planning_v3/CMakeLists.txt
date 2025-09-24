@@ -36,7 +36,23 @@ find_package(control_msgs REQUIRED)
 find_package(robot_interfaces REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
-find_package(hardware_driver REQUIRED)
+
+# Optional hardware_driver dependency
+option(USE_HARDWARE_DRIVER "Enable hardware driver support" ON)
+if(USE_HARDWARE_DRIVER)
+    find_package(hardware_driver QUIET)
+    if(hardware_driver_FOUND)
+        message(STATUS "Hardware driver found, enabling hardware support")
+        add_compile_definitions(USE_HARDWARE_DRIVER)
+        set(HARDWARE_DRIVER_AVAILABLE TRUE)
+    else()
+        message(WARNING "Hardware driver requested but not found, disabling hardware support")
+        set(HARDWARE_DRIVER_AVAILABLE FALSE)
+    endif()
+else()
+    message(STATUS "Hardware driver support disabled for CI environment")
+    set(HARDWARE_DRIVER_AVAILABLE FALSE)
+endif()
 
 # Conditional TRAC-IK dependency
 if(USE_TRAC_IK)
@@ -209,24 +225,30 @@ ament_target_dependencies(trajectory_planning_node
   robot_interfaces
 )
 
-# Hardware adapter test executable
-add_executable(hardware_adapter_test test/hardware_adapter_test.cpp)
-target_link_libraries(hardware_adapter_test ${PROJECT_NAME} hardware_driver::hardware_driver_canfd)
-ament_target_dependencies(hardware_adapter_test
-  rclcpp
-  rclcpp_action
-  control_msgs
-  sensor_msgs
-)
+# 条件性构建硬件相关目标
+if(HARDWARE_DRIVER_AVAILABLE)
+    # Hardware adapter test executable
+    add_executable(hardware_adapter_test test/hardware_adapter_test.cpp)
+    target_link_libraries(hardware_adapter_test ${PROJECT_NAME} hardware_driver::hardware_driver_canfd)
+    ament_target_dependencies(hardware_adapter_test
+      rclcpp
+      rclcpp_action
+      control_msgs
+      sensor_msgs
+    )
 
-# Hardware trajectory controller node
-add_executable(hardware_trajectory_controller_node src/nodes/hardware_trajectory_controller_node.cpp)
-target_link_libraries(hardware_trajectory_controller_node ${PROJECT_NAME} hardware_driver::hardware_driver_canfd)
-ament_target_dependencies(hardware_trajectory_controller_node
-  rclcpp
-  rclcpp_action
-  control_msgs
-)
+    # Hardware trajectory controller node
+    add_executable(hardware_trajectory_controller_node src/nodes/hardware_trajectory_controller_node.cpp)
+    target_link_libraries(hardware_trajectory_controller_node ${PROJECT_NAME} hardware_driver::hardware_driver_canfd)
+    ament_target_dependencies(hardware_trajectory_controller_node
+      rclcpp
+      rclcpp_action
+      control_msgs
+    )
+else()
+    # CI环境下跳过硬件相关目标
+    message(STATUS "Skipping hardware-dependent targets in CI environment")
+endif()
 
 # Install targets
 install(TARGETS ${PROJECT_NAME}
@@ -236,13 +258,21 @@ install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
 )
 
-install(TARGETS
+# 安装基础节点
+set(INSTALL_TARGETS
   movej_node
   movel_node
   movec_node
   joint_constrained_node
   trajectory_planning_node
-  hardware_trajectory_controller_node
+)
+
+# 如果硬件驱动可用，添加硬件相关节点
+if(HARDWARE_DRIVER_AVAILABLE)
+    list(APPEND INSTALL_TARGETS hardware_trajectory_controller_node)
+endif()
+
+install(TARGETS ${INSTALL_TARGETS}
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -274,7 +304,6 @@ ament_export_dependencies(
   rclcpp_action
   control_msgs
   robot_interfaces
-  hardware_driver
 )
 
 if(BUILD_TESTING)
