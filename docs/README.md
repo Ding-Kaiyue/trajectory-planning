@@ -13,6 +13,7 @@
 - **[DEVELOPER.md](DEVELOPER.md)** - 开发者指南，架构设计，开发流程
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - DDD架构文档和设计理念
 - **[PLANNING_STRATEGIES.md](PLANNING_STRATEGIES.md)** - 四种规划策略详解
+- **[CODE_STYLE.md](CODE_STYLE.md)** - 代码风格指南，命名规范和格式规范
 
 ### 📊 架构图表
 - **[系统架构图](diagrams/01_system_architecture.puml)** - DDD分层架构概览
@@ -40,9 +41,10 @@
 ### 开发者
 1. 阅读 [DEVELOPER.md](DEVELOPER.md) 了解架构
 2. 查看 [ARCHITECTURE.md](ARCHITECTURE.md) 了解DDD设计理念
-3. 浏览 [架构图表](#-架构图表) 理解系统结构
-4. 查看 [CONTRIBUTING.md](../.github/CONTRIBUTING.md) 了解贡献流程
-5. 参考 [CHANGELOG.md](CHANGELOG.md) 了解版本变更
+3. 参考 [CODE_STYLE.md](CODE_STYLE.md) 了解代码规范
+4. 浏览 [架构图表](#-架构图表) 理解系统结构
+5. 查看 [CONTRIBUTING.md](../.github/CONTRIBUTING.md) 了解贡献流程
+6. 参考 [CHANGELOG.md](CHANGELOG.md) 了解版本变更
 
 ### 架构学习路径
 1. **快速理解**: 查看 [系统架构图](diagrams/01_system_architecture/系统架构图.png)
