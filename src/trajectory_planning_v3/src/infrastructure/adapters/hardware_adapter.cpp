@@ -8,8 +8,7 @@
 
 namespace trajectory_planning::infrastructure::adapters {
 
-#ifdef USE_HARDWARE_DRIVER
-// 实际的硬件实现
+// 硬件适配器实现
 
 HardwareAdapter::HardwareAdapter(std::shared_ptr<RobotHardware> robot_hw,
                                  const std::string& interface,
@@ -138,51 +137,5 @@ bool HardwareAdapter::disableAllJoints() {
 	return hw_traj;
 }
 
-#else
-// CI环境下的模拟实现
-
-HardwareAdapter::HardwareAdapter(std::shared_ptr<RobotHardware> robot_hw,
-                                 const std::string& interface,
-                                 size_t num_joints)
-    : interface_(interface), num_joints_(num_joints) {
-	// 模拟实现 - 只记录参数
-	(void)robot_hw; // 避免未使用警告
-}
-
-HardwareAdapter::~HardwareAdapter() = default;
-
-void HardwareAdapter::setRobotHardware(std::shared_ptr<RobotHardware> robot_hw) {
-	// 模拟实现 - 空操作
-	(void)robot_hw;
-}
-
-bool HardwareAdapter::sendMitCommand(const std::vector<double>& positions,
-                                     const std::vector<double>& velocities,
-                                     const std::vector<double>& efforts) {
-	// 模拟实现 - 总是返回成功
-	(void)positions;
-	(void)velocities;
-	(void)efforts;
-	return true;
-}
-
-bool HardwareAdapter::executeTrajectory(const domain::entities::Trajectory& traj) {
-	// 模拟实现 - 总是返回成功
-	(void)traj;
-	return true;
-}
-
-bool HardwareAdapter::disableAllJoints() {
-	// 模拟实现 - 总是返回成功
-	return true;
-}
-
-Trajectory HardwareAdapter::convertTrajectory(const domain::entities::Trajectory& traj) const {
-	// 模拟实现 - 返回空轨迹
-	(void)traj;
-	return Trajectory{};
-}
-
-#endif // USE_HARDWARE_DRIVER
 
 }  // namespace trajectory_planning::infrastructure::adapters
