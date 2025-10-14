@@ -5,8 +5,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 
-#include "robot_interfaces/msg/joint_constrained_request.hpp"
-#include "robot_interfaces/msg/move_c_request.hpp"
+#include "trajectory_planning_interfaces/msg/joint_constrained_request.hpp"
+#include "trajectory_planning_interfaces/msg/move_c_request.hpp"
 #include "trajectory_planning_v3/domain/entities/trajectory.hpp"
 #include "trajectory_planning_v3/domain/value_objects/joint_position.hpp"
 #include "trajectory_planning_v3/infrastructure/planning/strategies/joint_constrained_planning_strategy.hpp"
@@ -38,24 +38,30 @@ public:
 
 	// 策略注册方法
 	void registerMoveJStrategy(std::shared_ptr<MoveJPlanningStrategy> strategy);
+	void registerMoveJStrategy();  // 重载版本：内部创建策略
 	void registerMoveLStrategy(std::shared_ptr<MoveLPlanningStrategy> strategy);
+	void registerMoveLStrategy();  // 重载版本：内部创建策略
 	void registerMoveCStrategy(std::shared_ptr<MoveCPlanningStrategy> strategy);
+	void registerMoveCStrategy();  // 重载版本：内部创建策略
 	void registerJointConstrainedStrategy(
 	    std::shared_ptr<JointConstrainedPlanningStrategy> strategy);
+	void registerJointConstrainedStrategy();  // 重载版本：内部创建策略
 
 	// 关节空间规划
 	PlanningResult planJointMotion(const sensor_msgs::msg::JointState& goal);
 
 	// 直线运动规划
-	PlanningResult planLinearMotion(const geometry_msgs::msg::Pose& goal);
+	PlanningResult planLinearMotion(
+	    const geometry_msgs::msg::Pose& goal,
+	    MoveLPlanningStrategy::PlanningType planning_type = MoveLPlanningStrategy::PlanningType::INTELLIGENT);
 
 	// 圆弧运动规划
 	PlanningResult planArcMotion(
-	    const robot_interfaces::msg::MoveCRequest& request);
+	    const trajectory_planning_interfaces::msg::MoveCRequest& request);
 
 	// 约束规划
 	PlanningResult planConstrainedMotion(
-	    const robot_interfaces::msg::JointConstrainedRequest& request);
+	    const trajectory_planning_interfaces::msg::JointConstrainedRequest& request);
 
 private:
 	std::shared_ptr<MoveJPlanningStrategy> movej_strategy_;
@@ -70,13 +76,13 @@ private:
 
 	// 辅助方法
 	Trajectory planArcTrajectory(
-	    const robot_interfaces::msg::MoveCRequest& request);
+	    const trajectory_planning_interfaces::msg::MoveCRequest& request);
 	Trajectory planBezierTrajectory(
-	    const robot_interfaces::msg::MoveCRequest& request);
+	    const trajectory_planning_interfaces::msg::MoveCRequest& request);
 	Trajectory planCircleTrajectory(
-	    const robot_interfaces::msg::MoveCRequest& request);
+	    const trajectory_planning_interfaces::msg::MoveCRequest& request);
 	Trajectory planCircle3PtTrajectory(
-	    const robot_interfaces::msg::MoveCRequest& request);
+	    const trajectory_planning_interfaces::msg::MoveCRequest& request);
 	PlanningResult createFailureResult(const std::string& operation,
 	                                   const std::string& reason);
 	PlanningResult createSuccessResult(const Trajectory& trajectory,

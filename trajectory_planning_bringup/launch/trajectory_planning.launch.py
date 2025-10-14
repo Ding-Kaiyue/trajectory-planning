@@ -46,9 +46,9 @@ def generate_launch_description():  # 修复：添加了括号
     # 添加轨迹规划节点类型参数
     planning_node_type_arg = DeclareLaunchArgument(
         'planning_node_type',
-        default_value='movej',
-        description='Type of planning node to launch (movej/movel/movec/joint_constrained/trajectory_planning)',
-        choices=['movej', 'movel', 'movec', 'joint_constrained', 'trajectory_planning']
+        default_value='none',   # 默认不启动任何节点
+        description='Type of planning node to launch (movej/movel/movec/joint_constrained/trajectory_planning/none)',
+        choices=['movej', 'movel', 'movec', 'joint_constrained', 'trajectory_planning', 'none']
     )
     
     robot_description = IncludeLaunchDescription(
