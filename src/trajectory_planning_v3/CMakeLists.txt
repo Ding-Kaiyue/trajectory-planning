@@ -33,7 +33,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(control_msgs REQUIRED)
-find_package(robot_interfaces REQUIRED)
+find_package(trajectory_planning_interfaces REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 
@@ -85,14 +85,12 @@ set(APPLICATION_USE_CASE_SOURCES
   src/application/use_cases/safety_motion_planning.cpp
   src/application/use_cases/plan_linear_motion.cpp
   src/application/use_cases/plan_joint_motion.cpp
-  src/application/use_cases/execute_trajectory.cpp
   src/application/use_cases/plan_arc_motion.cpp
 )
 
 # Application services sources
 set(APPLICATION_SERVICE_SOURCES
   src/application/services/robot_control_service.cpp
-  src/application/services/trajectory_execution_service.cpp
   src/application/services/motion_planning_service.cpp
 )
 
@@ -147,7 +145,7 @@ ament_target_dependencies(${PROJECT_NAME}
   tf2_ros
   rclcpp_action
   control_msgs
-  robot_interfaces
+  trajectory_planning_interfaces
   ament_index_cpp
   hardware_driver
 )
@@ -161,54 +159,8 @@ endif()
 target_link_libraries(${PROJECT_NAME} yaml-cpp)
 
 
-# Node executables
-add_executable(movej_node src/nodes/movej_node.cpp)
-target_link_libraries(movej_node ${PROJECT_NAME})
-ament_target_dependencies(movej_node
-  rclcpp
-  ament_index_cpp
-  sensor_msgs
-)
+# Node executables (只保留硬件相关的节点)
 
-add_executable(movel_node src/nodes/movel_node.cpp)
-target_link_libraries(movel_node ${PROJECT_NAME})
-ament_target_dependencies(movel_node
-  rclcpp
-  ament_index_cpp
-  geometry_msgs
-  tf2_geometry_msgs
-)
-
-add_executable(movec_node src/nodes/movec_node.cpp)
-target_link_libraries(movec_node ${PROJECT_NAME})
-ament_target_dependencies(movec_node
-  rclcpp
-  ament_index_cpp
-  geometry_msgs
-  tf2_geometry_msgs
-  robot_interfaces
-)
-
-add_executable(joint_constrained_node src/nodes/joint_constrained_node.cpp)
-target_link_libraries(joint_constrained_node ${PROJECT_NAME})
-ament_target_dependencies(joint_constrained_node
-  rclcpp
-  ament_index_cpp
-  geometry_msgs
-  tf2_geometry_msgs
-  robot_interfaces
-)
-
-add_executable(trajectory_planning_node src/nodes/trajectory_planning_node.cpp)
-target_link_libraries(trajectory_planning_node ${PROJECT_NAME})
-ament_target_dependencies(trajectory_planning_node
-  rclcpp
-  ament_index_cpp
-  sensor_msgs
-  geometry_msgs
-  tf2_geometry_msgs
-  robot_interfaces
-)
 
 # Hardware adapter test executable (仅在有实际硬件驱动时构建)
 if(TARGET hardware_driver::hardware_driver_canfd)
@@ -244,14 +196,8 @@ install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
 )
 
-# 安装基础节点
-set(INSTALL_TARGETS
-  movej_node
-  movel_node
-  movec_node
-  joint_constrained_node
-  trajectory_planning_node
-)
+# 安装基础节点 (目前没有基础节点)
+set(INSTALL_TARGETS)
 
 # 如果构建了硬件相关目标，添加到安装列表
 if(HAS_HARDWARE_TARGETS)
@@ -289,8 +235,14 @@ ament_export_dependencies(
   tf2_geometry_msgs
   rclcpp_action
   control_msgs
-  robot_interfaces
+  trajectory_planning_interfaces
+  hardware_driver
 )
+
+# 只在TRAC-IK可用时导出trac_ik_lib依赖
+if(TRAC_IK_AVAILABLE)
+  ament_export_dependencies(trac_ik_lib)
+endif()
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

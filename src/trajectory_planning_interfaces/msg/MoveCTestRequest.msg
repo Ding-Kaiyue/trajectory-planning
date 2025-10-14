@@ -8,4 +8,4 @@ uint8 route_type    # 0: ARC 1: BEZIER 2: CIRCLE 3: CIRCLE3PT
 string route_name   # 轨迹名称（可选）
 
 # 简化的位姿点（使用RPY角度）
-robot_interfaces/MoveCTestWaypoint[] waypoints
+trajectory_planning_interfaces/MoveCTestWaypoint[] waypoints

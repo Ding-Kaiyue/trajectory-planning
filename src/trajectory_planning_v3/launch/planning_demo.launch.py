@@ -11,8 +11,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'planning_node_type',
             default_value='movej',
-            description='Type of planning node to launch (movej/movel/movec/joint_constrained/trajectory_planning)',
-            choices=['movej', 'movel', 'movec', 'joint_constrained', 'trajectory_planning']
+            description='Type of planning node to launch (movej/movel/movec/joint_constrained/trajectory_planning/none)',
+            choices=['movej', 'movel', 'movec', 'joint_constrained', 'trajectory_planning', 'none']
+        ),
+        DeclareLaunchArgument(
+            'use_hardware_controller',
+            default_value='false',
+            description='Launch hardware trajectory controller (set to true if not using arm_controller)'
         ),
     ]
 
@@ -20,12 +25,13 @@ def generate_launch_description():
 
     # 节点定义
     nodes = [
-        # 硬件轨迹控制器 - 总是启动
+        # 硬件轨迹控制器 - 条件启动 (默认由arm_controller管理硬件)
         Node(
             package='trajectory_planning_v3',
             executable='hardware_trajectory_controller_node',
             name='hardware_trajectory_controller',
             output='screen',
+            condition=IfCondition(LaunchConfiguration('use_hardware_controller')),
         ),
 
         # MoveJ节点 - 条件启动
@@ -141,7 +147,9 @@ def generate_launch_description():
     startup_info = [
         LogInfo(msg="=== Trajectory Planning Launch ==="),
         LogInfo(msg=["Planning Node Type: ", LaunchConfiguration('planning_node_type')]),
-        LogInfo(msg="Hardware trajectory controller running on /arm_controller/follow_joint_trajectory"),
+        LogInfo(msg=["Hardware Controller: ", LaunchConfiguration('use_hardware_controller')]),
+        LogInfo(msg="Note: Hardware is managed by arm_controller by default. Set use_hardware_controller:=true if needed."),
+        LogInfo(msg="Note: Use planning_node_type:=none to disable all planning nodes (when integrated in arm_controller)."),
         LogInfo(msg="Note: Make sure robot_bringup launch file is running for robot_state_publisher, MoveIt, etc."),
     ]
 
