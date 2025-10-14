@@ -16,7 +16,7 @@ uint8 INTELLIGENT = 2
 uint8 planning_type
 
 # Joint constraints list
-robot_interfaces/JointConstraint[] joint_constraints
+trajectory_planning_interfaces/JointConstraint[] joint_constraints
 
 # Planning parameters
 int32 max_attempts  # Maximum number of attempts, default 5

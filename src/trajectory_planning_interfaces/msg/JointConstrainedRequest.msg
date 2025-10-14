@@ -10,7 +10,7 @@ uint8 INTELLIGENT = 2
 uint8 planning_type
 
 # 关节约束列表
-robot_interfaces/JointConstraint[] joint_constraints
+trajectory_planning_interfaces/JointConstraint[] joint_constraints
 
 # 规划参数
 int32 max_attempts  # 最大尝试次数，默认5

@@ -20,10 +20,20 @@ void MotionPlanningService::registerMoveJStrategy(
 	RCLCPP_INFO(logger_, "MoveJ strategy registered");
 }
 
+void MotionPlanningService::registerMoveJStrategy() {
+	movej_strategy_ = std::make_shared<MoveJPlanningStrategy>(*moveit_adapter_);
+	RCLCPP_INFO(logger_, "MoveJ strategy created and registered");
+}
+
 void MotionPlanningService::registerMoveLStrategy(
     std::shared_ptr<MoveLPlanningStrategy> strategy) {
 	movel_strategy_ = strategy;
 	RCLCPP_INFO(logger_, "MoveL strategy registered");
+}
+
+void MotionPlanningService::registerMoveLStrategy() {
+	movel_strategy_ = std::make_shared<MoveLPlanningStrategy>(*moveit_adapter_);
+	RCLCPP_INFO(logger_, "MoveL strategy created and registered");
 }
 
 void MotionPlanningService::registerMoveCStrategy(
@@ -32,10 +42,21 @@ void MotionPlanningService::registerMoveCStrategy(
 	RCLCPP_INFO(logger_, "MoveC strategy registered");
 }
 
+void MotionPlanningService::registerMoveCStrategy() {
+	movec_strategy_ = std::make_shared<MoveCPlanningStrategy>(*moveit_adapter_);
+	RCLCPP_INFO(logger_, "MoveC strategy created and registered");
+}
+
 void MotionPlanningService::registerJointConstrainedStrategy(
     std::shared_ptr<JointConstrainedPlanningStrategy> strategy) {
 	joint_constrained_strategy_ = strategy;
 	RCLCPP_INFO(logger_, "JointConstrained strategy registered");
+}
+
+void MotionPlanningService::registerJointConstrainedStrategy() {
+	joint_constrained_strategy_ = std::make_shared<JointConstrainedPlanningStrategy>(
+	    *moveit_adapter_);
+	RCLCPP_INFO(logger_, "JointConstrained strategy created and registered");
 }
 
 PlanningResult MotionPlanningService::planJointMotion(
@@ -49,7 +70,7 @@ PlanningResult MotionPlanningService::planJointMotion(
 		Trajectory trajectory = movej_strategy_->plan(goal_position);
 		if (trajectory.empty()) {
 			return createFailureResult("MoveJ",
-			                           "Planning failed - empty trajectory");
+			                           "Planning failed");
 		}
 
 		return createSuccessResult(trajectory, "MoveJ");
@@ -60,17 +81,17 @@ PlanningResult MotionPlanningService::planJointMotion(
 }
 
 PlanningResult MotionPlanningService::planLinearMotion(
-    const geometry_msgs::msg::Pose& goal) {
+    const geometry_msgs::msg::Pose& goal,
+    MoveLPlanningStrategy::PlanningType planning_type) {
 	if (!movel_strategy_) {
 		return createFailureResult("MoveL", "Strategy not initialized");
 	}
 
 	try {
-		Trajectory trajectory = movel_strategy_->plan(
-		    goal, MoveLPlanningStrategy::PlanningType::INTELLIGENT);
+		Trajectory trajectory = movel_strategy_->plan(goal, planning_type);
 		if (trajectory.empty()) {
 			return createFailureResult("MoveL",
-			                           "Planning failed - empty trajectory");
+			                           "Planning failed");
 		}
 
 		return createSuccessResult(trajectory, "MoveL");
@@ -81,7 +102,7 @@ PlanningResult MotionPlanningService::planLinearMotion(
 }
 
 PlanningResult MotionPlanningService::planArcMotion(
-    const robot_interfaces::msg::MoveCRequest& request) {
+    const trajectory_planning_interfaces::msg::MoveCRequest& request) {
 	if (!movec_strategy_) {
 		return createFailureResult("MoveC", "Strategy not initialized");
 	}
@@ -109,7 +130,7 @@ PlanningResult MotionPlanningService::planArcMotion(
 
 		if (trajectory.empty()) {
 			return createFailureResult("MoveC",
-			                           "Planning failed - empty trajectory");
+			                           "Planning failed");
 		}
 
 		return createSuccessResult(trajectory, "MoveC");
@@ -120,7 +141,7 @@ PlanningResult MotionPlanningService::planArcMotion(
 }
 
 PlanningResult MotionPlanningService::planConstrainedMotion(
-    const robot_interfaces::msg::JointConstrainedRequest& request) {
+    const trajectory_planning_interfaces::msg::JointConstrainedRequest& request) {
 	if (!joint_constrained_strategy_) {
 		return createFailureResult("JointConstrained",
 		                           "Strategy not initialized");
@@ -132,13 +153,13 @@ PlanningResult MotionPlanningService::planConstrainedMotion(
 
 		// 添加新约束
 		for (const auto& jc : request.joint_constraints) {
-			if (jc.type == robot_interfaces::msg::JointConstraint::FIXED) {
+			if (jc.type == trajectory_planning_interfaces::msg::JointConstraint::FIXED) {
 				auto constraint = std::make_shared<
 				    JointConstrainedPlanningStrategy::FixedJointConstraint>(
 				    jc.joint_index, jc.fixed_value, jc.weight, jc.is_hard);
 				joint_constrained_strategy_->addConstraint(constraint, true);
 			} else if (jc.type ==
-			           robot_interfaces::msg::JointConstraint::RANGE) {
+			           trajectory_planning_interfaces::msg::JointConstraint::RANGE) {
 				auto constraint = std::make_shared<
 				    JointConstrainedPlanningStrategy::RangeJointConstraint>(
 				    jc.joint_index, jc.min_value, jc.max_value, jc.weight,
@@ -160,7 +181,7 @@ PlanningResult MotionPlanningService::planConstrainedMotion(
 
 		if (trajectory.empty()) {
 			return createFailureResult("JointConstrained",
-			                           "Planning failed - empty trajectory");
+			                           "Planning failed");
 		}
 
 		return createSuccessResult(trajectory, "JointConstrained");
@@ -171,7 +192,7 @@ PlanningResult MotionPlanningService::planConstrainedMotion(
 }
 
 Trajectory MotionPlanningService::planArcTrajectory(
-    const robot_interfaces::msg::MoveCRequest& request) {
+    const trajectory_planning_interfaces::msg::MoveCRequest& request) {
 	if (request.waypoints.size() != 2) {
 		RCLCPP_ERROR(
 		    logger_,
@@ -199,7 +220,7 @@ Trajectory MotionPlanningService::planArcTrajectory(
 	                                request.waypoints[1]);
 }
 Trajectory MotionPlanningService::planBezierTrajectory(
-    const robot_interfaces::msg::MoveCRequest& request) {
+    const trajectory_planning_interfaces::msg::MoveCRequest& request) {
 	if (request.waypoints.size() != 4) {
 		RCLCPP_ERROR(logger_,
 		             "BEZIER route requires exactly 4 waypoints: [start, "
@@ -213,7 +234,7 @@ Trajectory MotionPlanningService::planBezierTrajectory(
 }
 
 Trajectory MotionPlanningService::planCircleTrajectory(
-    const robot_interfaces::msg::MoveCRequest& request) {
+    const trajectory_planning_interfaces::msg::MoveCRequest& request) {
 	if (request.waypoints.size() != 2) {
 		RCLCPP_ERROR(
 		    logger_,
@@ -225,7 +246,7 @@ Trajectory MotionPlanningService::planCircleTrajectory(
 }
 
 Trajectory MotionPlanningService::planCircle3PtTrajectory(
-    const robot_interfaces::msg::MoveCRequest& request) {
+    const trajectory_planning_interfaces::msg::MoveCRequest& request) {
 	if (request.waypoints.size() != 3) {
 		RCLCPP_ERROR(
 		    logger_,
