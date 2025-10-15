@@ -1,0 +1,39 @@
+# Global ownership - 全局代码所有者
+# 所有文件默认由项目维护者审查
+* @Ding-Kaiyue
+
+# Core system files - 核心系统文件
+/.github/ @Ding-Kaiyue
+/docs/ @Ding-Kaiyue
+/LICENSE @Ding-Kaiyue
+/README.md @Ding-Kaiyue
+
+# Build and configuration - 构建和配置文件
+**/CMakeLists.txt @Ding-Kaiyue
+**/package.xml @Ding-Kaiyue
+**/*.launch.py @Ding-Kaiyue
+**/*.yaml @Ding-Kaiyue
+
+# Core trajectory planning system - 核心轨迹规划系统
+/src/trajectory_planning_v3/src/domain/ @Ding-Kaiyue
+/src/trajectory_planning_v3/src/application/ @Ding-Kaiyue
+/src/trajectory_planning_v3/src/infrastructure/ @Ding-Kaiyue
+/src/trajectory_planning_v3/include/ @Ding-Kaiyue
+
+# Robot configuration - 机器人配置
+/src/robot_config/ @Ding-Kaiyue
+
+# Hardware integration - 硬件集成
+/src/trajectory_planning_v3/src/infrastructure/adapters/hardware_adapter.cpp @Ding-Kaiyue
+/src/trajectory_planning_v3/src/infrastructure/controllers/ @Ding-Kaiyue
+
+# Safety critical components - 安全关键组件
+/src/trajectory_planning_v3/src/application/orchestrators/safety_orchestrator.cpp @Ding-Kaiyue
+/src/trajectory_planning_v3/src/domain/services/collision_checker.cpp @Ding-Kaiyue
+/src/trajectory_planning_v3/src/domain/services/trajectory_validation_service.cpp @Ding-Kaiyue
+
+# Node executables - 节点可执行文件
+/src/trajectory_planning_v3/src/nodes/ @Ding-Kaiyue
+
+# Tests - 测试文件
+**/test/ @Ding-Kaiyue
