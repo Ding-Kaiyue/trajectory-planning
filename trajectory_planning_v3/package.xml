@@ -21,6 +21,7 @@
   <depend>ament_index_cpp</depend>
   <depend>trajectory_planning_interfaces</depend>
   <depend>hardware_driver</depend>
+  <!-- hardware_driver is optional dependency, managed by CMakeLists.txt -->
   <depend>rosidl_default_generators</depend>
 
   <exec_depend>joint_state_publisher</exec_depend>
