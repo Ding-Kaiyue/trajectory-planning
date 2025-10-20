@@ -155,16 +155,18 @@ ament_target_dependencies(${PROJECT_NAME}
   control_msgs
   trajectory_planning_interfaces
   ament_index_cpp
-  hardware_driver
+)
+
+# Explicitly link hardware_driver with proper target
+target_link_libraries(${PROJECT_NAME}
+  hardware_driver::hardware_driver_canfd
+  yaml-cpp
 )
 
 # Add TRAC-IK dependency if available
 if(TRAC_IK_AVAILABLE)
   target_link_libraries(${PROJECT_NAME} trac_ik_lib::trac_ik_lib)
 endif()
-
-# 显式链接hardware_driver库到主库
-target_link_libraries(${PROJECT_NAME} yaml-cpp)
 
 
 # Node executables (只保留硬件相关的节点)
@@ -244,7 +246,6 @@ ament_export_dependencies(
   rclcpp_action
   control_msgs
   trajectory_planning_interfaces
-  hardware_driver
 )
 
 # 只在TRAC-IK可用时导出trac_ik_lib依赖
