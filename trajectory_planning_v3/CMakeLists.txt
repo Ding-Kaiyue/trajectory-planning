@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.8)
 project(trajectory_planning_v3 VERSION 1.0.0 LANGUAGES CXX)
 
+# Ensure consistent behavior for option() vs normal variables (suppress CMP0077 developer warnings)
+if(POLICY CMP0077)
+  cmake_policy(SET CMP0077 NEW)
+endif()
+
 # 默认禁用测试
 if(NOT DEFINED BUILD_TESTING)
   set(BUILD_TESTING OFF)
