@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.8)
 project(trajectory_planning_v3 VERSION 1.0.0 LANGUAGES CXX)
 
+# Ensure consistent behavior for option() vs normal variables (suppress CMP0077 developer warnings)
+if(POLICY CMP0077)
+  cmake_policy(SET CMP0077 NEW)
+endif()
+
 # 默认禁用测试
 if(NOT DEFINED BUILD_TESTING)
   set(BUILD_TESTING OFF)
@@ -155,18 +160,16 @@ ament_target_dependencies(${PROJECT_NAME}
   control_msgs
   trajectory_planning_interfaces
   ament_index_cpp
-)
-
-# Explicitly link hardware_driver with proper target
-target_link_libraries(${PROJECT_NAME}
-  hardware_driver::hardware_driver_canfd
-  yaml-cpp
+  hardware_driver
 )
 
 # Add TRAC-IK dependency if available
 if(TRAC_IK_AVAILABLE)
   target_link_libraries(${PROJECT_NAME} trac_ik_lib::trac_ik_lib)
 endif()
+
+# 显式链接hardware_driver库到主库
+target_link_libraries(${PROJECT_NAME} yaml-cpp hardware_driver::hardware_driver_canfd)
 
 
 # Node executables (只保留硬件相关的节点)
@@ -246,6 +249,7 @@ ament_export_dependencies(
   rclcpp_action
   control_msgs
   trajectory_planning_interfaces
+  hardware_driver
 )
 
 # 只在TRAC-IK可用时导出trac_ik_lib依赖
