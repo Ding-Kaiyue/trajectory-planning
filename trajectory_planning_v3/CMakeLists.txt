@@ -15,10 +15,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set custom paths for local installations
-list(APPEND CMAKE_PREFIX_PATH
-  "$ENV{HOME}/Bags/moveit2_ws/install"
-  "$ENV{HOME}/Bags/trac_ik_ws/install"
-)
+# Set custom paths for local installations (if they exist)
+if(EXISTS "$ENV{HOME}/Bags/moveit2_ws/install")
+  list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/Bags/moveit2_ws/install")
+endif()
+if(EXISTS "$ENV{HOME}/Bags/trac_ik_ws/install")
+  list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/Bags/trac_ik_ws/install")
+endif()
 
 # Optional TRAC-IK support
 option(USE_TRAC_IK "Enable TRAC-IK support" ON)
