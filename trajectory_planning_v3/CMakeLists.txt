@@ -164,7 +164,7 @@ if(TRAC_IK_AVAILABLE)
 endif()
 
 # 显式链接hardware_driver库到主库
-target_link_libraries(${PROJECT_NAME} yaml-cpp)
+target_link_libraries(${PROJECT_NAME} yaml-cpp hardware_driver::hardware_driver_canfd)
 
 
 # Node executables (只保留硬件相关的节点)
