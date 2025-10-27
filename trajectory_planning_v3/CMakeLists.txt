@@ -38,8 +38,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
-find_package(moveit_ros_planning REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
+find_package(moveit_servo REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -110,12 +110,13 @@ set(APPLICATION_SERVICE_SOURCES
 # Infrastructure sources
 set(INFRASTRUCTURE_SOURCES
   src/infrastructure/integration/moveit_adapter.cpp
+  src/infrastructure/integration/moveit_servo_adapter.cpp
   src/infrastructure/integration/tracik_adapter.cpp
   src/infrastructure/integration/ros2_bridge.cpp
   src/infrastructure/planning/strategies/position_planning_strategy.cpp
   src/infrastructure/planning/strategies/orientation_planning_strategy.cpp
   src/infrastructure/planning/strategies/movel_planning_strategy.cpp
-  src/infrastructure/planning/strategies/differential_planning_strategy.cpp
+  src/infrastructure/planning/strategies/cartesian_velocity_planning_strategy.cpp
   src/infrastructure/planning/strategies/movej_planning_strategy.cpp
   src/infrastructure/planning/strategies/movec_planning_strategy.cpp
   src/infrastructure/planning/strategies/joint_constrained_planning_strategy.cpp
@@ -150,8 +151,8 @@ ament_target_dependencies(${PROJECT_NAME}
   sensor_msgs
   moveit_msgs
   moveit_core
-  moveit_ros_planning
   moveit_ros_planning_interface
+  moveit_servo
   Eigen3
   tf2_eigen
   tf2_geometry_msgs
@@ -169,7 +170,10 @@ if(TRAC_IK_AVAILABLE)
 endif()
 
 # 显式链接hardware_driver库到主库
-target_link_libraries(${PROJECT_NAME} yaml-cpp hardware_driver::hardware_driver_canfd)
+target_link_libraries(${PROJECT_NAME} 
+  yaml-cpp 
+  hardware_driver::hardware_driver_canfd
+)
 
 
 # Node executables (只保留硬件相关的节点)
@@ -241,8 +245,8 @@ ament_export_dependencies(
   sensor_msgs
   moveit_msgs
   moveit_core
-  moveit_ros_planning
   moveit_ros_planning_interface
+  moveit_servo
   Eigen3
   tf2_eigen
   tf2_geometry_msgs
