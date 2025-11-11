@@ -9,6 +9,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <Eigen/Dense>
 
 namespace trajectory_planning::infrastructure::integration {
 
@@ -40,6 +41,14 @@ public:
 	geometry_msgs::msg::Pose getCurrentPoseFromTF() const;
 	std::vector<std::pair<double, double>> getJointLimits(
 	    const std::string& arm_type = "arm620") const;
+
+	// ===== 运动学信息 =====
+	/**
+	 * @brief 计算指定关节位置下的 Jacobian 矩阵
+	 * @param joint_positions 关节位置向量 (rad)
+	 * @return Jacobian 矩阵 (6 x DOF)，失败返回空矩阵
+	 */
+	Eigen::MatrixXd computeJacobian(const std::vector<double>& joint_positions) const;
 
 	// ===== 状态设置 =====
 	bool setStartState(const std::vector<double>& joint_values);

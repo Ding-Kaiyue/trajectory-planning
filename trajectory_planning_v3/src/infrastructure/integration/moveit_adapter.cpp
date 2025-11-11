@@ -274,4 +274,65 @@ void MoveItAdapter::resetStartStateToDefault() {
 	move_group_->setStartStateToCurrentState();
 }
 
+// ===== 运动学信息 =====
+Eigen::MatrixXd MoveItAdapter::computeJacobian(
+    const std::vector<double>& joint_positions) const {
+	if (!move_group_) {
+		RCLCPP_ERROR(node_->get_logger(), "MoveGroup not initialized");
+		return Eigen::MatrixXd();
+	}
+
+	auto robot_model = move_group_->getRobotModel();
+	if (!robot_model) {
+		RCLCPP_ERROR(node_->get_logger(), "Failed to get robot model");
+		return Eigen::MatrixXd();
+	}
+
+	// 创建机器人状态
+	auto robot_state = std::make_shared<moveit::core::RobotState>(robot_model);
+	const auto* joint_model_group = robot_state->getJointModelGroup(move_group_->getName());
+	if (!joint_model_group) {
+		RCLCPP_ERROR(node_->get_logger(), "Failed to get joint model group");
+		return Eigen::MatrixXd();
+	}
+
+	// 设置关节位置
+	if (joint_positions.size() != joint_model_group->getActiveJointModels().size()) {
+		RCLCPP_ERROR(node_->get_logger(),
+		             "Joint positions size (%zu) doesn't match active joints size (%zu)",
+		             joint_positions.size(),
+		             joint_model_group->getActiveJointModels().size());
+		return Eigen::MatrixXd();
+	}
+
+	robot_state->setJointGroupPositions(joint_model_group, joint_positions);
+
+	// 获取末端执行器链接
+	const auto& ee_link_names = joint_model_group->getLinkModelNames();
+	if (ee_link_names.empty()) {
+		RCLCPP_ERROR(node_->get_logger(), "No link models found in planning group");
+		return Eigen::MatrixXd();
+	}
+	const std::string& ee_link_name = ee_link_names.back();
+
+	// 计算 Jacobian
+	Eigen::MatrixXd jacobian;
+	Eigen::Vector3d reference_point = Eigen::Vector3d::Zero();
+
+	const auto* ee_link_model = robot_state->getLinkModel(ee_link_name);
+	if (!ee_link_model) {
+		RCLCPP_ERROR(node_->get_logger(), "End effector link '%s' not found",
+		             ee_link_name.c_str());
+		return Eigen::MatrixXd();
+	}
+
+	if (!robot_state->getJacobian(joint_model_group, ee_link_model, reference_point,
+	                              jacobian)) {
+		RCLCPP_ERROR(node_->get_logger(), "Failed to compute Jacobian");
+		return Eigen::MatrixXd();
+	}
+
+	return jacobian;
+}
+
 }  // namespace trajectory_planning::infrastructure::integration
