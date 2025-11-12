@@ -30,40 +30,70 @@ void HardwareAdapter::setRobotHardware(
 
 bool HardwareAdapter::sendPositionCommand(
     const std::vector<double>& positions) {
-	if (!robot_hw_ || positions.size() != num_joints_) {
+	if (!robot_hw_ || positions.size() != num_joints_ || num_joints_ > 6) {
 		return false;
 	}
 
-	return robot_hw_->send_realtime_position_command(interface_, positions);
+	// 转换为std::array<double, 6>
+	std::array<double, 6> pos_array{};
+	for (size_t i = 0; i < num_joints_; ++i) {
+		pos_array[i] = positions[i];
+	}
+
+	return robot_hw_->send_realtime_position_command(interface_, pos_array);
 }
 
 bool HardwareAdapter::sendVelocityCommand(
     const std::vector<double>& velocities) {
-	if (!robot_hw_ || velocities.size() != num_joints_) {
+	if (!robot_hw_ || velocities.size() != num_joints_ || num_joints_ > 6) {
 		return false;
 	}
 
-	return robot_hw_->send_realtime_velocity_command(interface_, velocities);
+	// 转换为std::array<double, 6>
+	std::array<double, 6> vel_array{};
+	for (size_t i = 0; i < num_joints_; ++i) {
+		vel_array[i] = velocities[i];
+	}
+
+	return robot_hw_->send_realtime_velocity_command(interface_, vel_array);
 }
 
 bool HardwareAdapter::sendEffortCommand(const std::vector<double>& efforts) {
-	if (!robot_hw_ || efforts.size() != num_joints_) {
+	if (!robot_hw_ || efforts.size() != num_joints_ || num_joints_ > 6) {
 		return false;
 	}
 
-	return robot_hw_->send_realtime_effort_command(interface_, efforts);
+	// 转换为std::array<double, 6>
+	std::array<double, 6> effort_array{};
+	for (size_t i = 0; i < num_joints_; ++i) {
+		effort_array[i] = efforts[i];
+	}
+
+	return robot_hw_->send_realtime_effort_command(interface_, effort_array);
 }
 
 bool HardwareAdapter::sendMitCommand(const std::vector<double>& positions,
                                      const std::vector<double>& velocities,
                                      const std::vector<double>& efforts) {
 	if (!robot_hw_ || positions.size() != num_joints_ ||
-	    velocities.size() != num_joints_ || efforts.size() != num_joints_) {
+	    velocities.size() != num_joints_ || efforts.size() != num_joints_ ||
+	    num_joints_ > 6) {
 		return false;
 	}
 
-	return robot_hw_->send_realtime_mit_command(interface_, positions,
-	                                            velocities, efforts);
+	// 转换为std::array<double, 6>
+	std::array<double, 6> pos_array{};
+	std::array<double, 6> vel_array{};
+	std::array<double, 6> effort_array{};
+
+	for (size_t i = 0; i < num_joints_; ++i) {
+		pos_array[i] = positions[i];
+		vel_array[i] = velocities[i];
+		effort_array[i] = efforts[i];
+	}
+
+	return robot_hw_->send_realtime_mit_command(interface_, pos_array,
+	                                            vel_array, effort_array);
 }
 
 // === 轨迹执行接口实现 ===
@@ -91,15 +121,18 @@ bool HardwareAdapter::disableAllJoints() {
 		return false;
 	}
 
-	std::cout << "🔌 HardwareAdapter: Disabling all 6 motors..." << std::endl;
+	std::cout << "🔌 HardwareAdapter: Disabling all " << num_joints_ << " motors..." << std::endl;
 
-	// 失能电机
-	robot_hw_->disable_motor(interface_, 1);
-	robot_hw_->disable_motor(interface_, 2);
-	robot_hw_->disable_motor(interface_, 3);
-	robot_hw_->disable_motor(interface_, 4);
-	robot_hw_->disable_motor(interface_, 5);
-	robot_hw_->disable_motor(interface_, 6);
+	// 失能电机 - 依次执行所有可能的模式 (3=MIT_MODE, 4=SPEED_MODE, 5=POSITION_ABS_MODE)
+	const std::array<uint8_t, 3> modes = {3, 4, 5};
+
+	for (uint8_t mode : modes) {
+		for (size_t i = 1; i <= num_joints_; ++i) {
+			robot_hw_->disable_motor(interface_, i, mode);
+		}
+		// 每个模式间隔5ms
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
 
 	// 等待一下让命令发送完成
 	std::this_thread::sleep_for(std::chrono::milliseconds(500));

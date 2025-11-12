@@ -41,11 +41,6 @@ int main(int argc, char* argv[]) {
 		RCLCPP_INFO(rclcpp::get_logger("hardware_trajectory_controller_node"),
 		            "Hardware trajectory controller initialized successfully");
 
-		// 禁用所有电机，避免异响
-		// RCLCPP_INFO(rclcpp::get_logger("hardware_trajectory_controller_node"),
-		//             "Disabling all motors to prevent noise");
-		// hardware_adapter->disableAllJoints();
-
 		// 启动节点
 		rclcpp::spin(controller);
 
