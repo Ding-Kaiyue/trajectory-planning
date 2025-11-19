@@ -1,2 +1,5 @@
 .vscode/
 hardware_driver/
+build/
+log/
+install/

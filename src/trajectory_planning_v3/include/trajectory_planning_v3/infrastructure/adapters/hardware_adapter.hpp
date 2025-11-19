@@ -42,34 +42,50 @@ public:
 	/**
 	 * @brief 批量发送位置命令
 	 * @param positions 所有关节的目标位置
+	 * @param kps 可选的比例增益（默认0.05）
+	 * @param kds 可选的微分增益（默认0.005）
 	 * @return 是否成功
 	 */
-	bool sendPositionCommand(const std::vector<double>& positions);
+	bool sendPositionCommand(const std::vector<double>& positions,
+	                         const std::vector<double>& kps = {},
+	                         const std::vector<double>& kds = {});
 
 	/**
 	 * @brief 批量发送速度命令
 	 * @param velocities 所有关节的目标速度
+	 * @param kps 可选的比例增益（默认0.0）
+	 * @param kds 可选的微分增益（默认0.005）
 	 * @return 是否成功
 	 */
-	bool sendVelocityCommand(const std::vector<double>& velocities);
+	bool sendVelocityCommand(const std::vector<double>& velocities,
+	                         const std::vector<double>& kps = {},
+	                         const std::vector<double>& kds = {});
 
 	/**
 	 * @brief 批量发送力矩命令
 	 * @param efforts 所有关节的目标力矩
+	 * @param kps 可选的比例增益（默认0.05）
+	 * @param kds 可选的微分增益（默认0.005）
 	 * @return 是否成功
 	 */
-	bool sendEffortCommand(const std::vector<double>& efforts);
+	bool sendEffortCommand(const std::vector<double>& efforts,
+	                       const std::vector<double>& kps = {},
+	                       const std::vector<double>& kds = {});
 
 	/**
 	 * @brief 批量发送MIT模式命令
 	 * @param positions 目标位置
 	 * @param velocities 目标速度
 	 * @param efforts 目标力矩
+	 * @param kps 可选的比例增益（默认0.05）
+	 * @param kds 可选的微分增益（默认0.005）
 	 * @return 是否成功
 	 */
 	bool sendMitCommand(const std::vector<double>& positions,
 	                    const std::vector<double>& velocities,
-	                    const std::vector<double>& efforts);
+	                    const std::vector<double>& efforts,
+	                    const std::vector<double>& kps = {},
+	                    const std::vector<double>& kds = {});
 
 	// === 轨迹执行接口 ===
 

@@ -29,52 +29,75 @@ void HardwareAdapter::setRobotHardware(
 // === 批量控制接口实现 ===
 
 bool HardwareAdapter::sendPositionCommand(
-    const std::vector<double>& positions) {
+    const std::vector<double>& positions,
+    const std::vector<double>& kps,
+    const std::vector<double>& kds) {
 	if (!robot_hw_ || positions.size() != num_joints_ || num_joints_ > 6) {
 		return false;
 	}
 
 	// 转换为std::array<double, 6>
 	std::array<double, 6> pos_array{};
+	std::array<double, 6> kp_array{};
+	std::array<double, 6> kd_array{};
+
 	for (size_t i = 0; i < num_joints_; ++i) {
 		pos_array[i] = positions[i];
+		kp_array[i] = (i < kps.size()) ? kps[i] : 0.05;  // 默认kp=0.05
+		kd_array[i] = (i < kds.size()) ? kds[i] : 0.005; // 默认kd=0.005
 	}
 
-	return robot_hw_->send_realtime_position_command(interface_, pos_array);
+	return robot_hw_->send_realtime_position_command(interface_, pos_array, kp_array, kd_array);
 }
 
 bool HardwareAdapter::sendVelocityCommand(
-    const std::vector<double>& velocities) {
+    const std::vector<double>& velocities,
+    const std::vector<double>& kps,
+    const std::vector<double>& kds) {
 	if (!robot_hw_ || velocities.size() != num_joints_ || num_joints_ > 6) {
 		return false;
 	}
 
 	// 转换为std::array<double, 6>
 	std::array<double, 6> vel_array{};
+	std::array<double, 6> kp_array{};
+	std::array<double, 6> kd_array{};
+
 	for (size_t i = 0; i < num_joints_; ++i) {
 		vel_array[i] = velocities[i];
+		kp_array[i] = (i < kps.size()) ? kps[i] : 0.0;   // 默认kp=0.0
+		kd_array[i] = (i < kds.size()) ? kds[i] : 0.005; // 默认kd=0.005
 	}
 
-	return robot_hw_->send_realtime_velocity_command(interface_, vel_array);
+	return robot_hw_->send_realtime_velocity_command(interface_, vel_array, kp_array, kd_array);
 }
 
-bool HardwareAdapter::sendEffortCommand(const std::vector<double>& efforts) {
+bool HardwareAdapter::sendEffortCommand(const std::vector<double>& efforts,
+                                       const std::vector<double>& kps,
+                                       const std::vector<double>& kds) {
 	if (!robot_hw_ || efforts.size() != num_joints_ || num_joints_ > 6) {
 		return false;
 	}
 
 	// 转换为std::array<double, 6>
 	std::array<double, 6> effort_array{};
+	std::array<double, 6> kp_array{};
+	std::array<double, 6> kd_array{};
+
 	for (size_t i = 0; i < num_joints_; ++i) {
 		effort_array[i] = efforts[i];
+		kp_array[i] = (i < kps.size()) ? kps[i] : 0.05;  // 默认kp=0.05
+		kd_array[i] = (i < kds.size()) ? kds[i] : 0.005; // 默认kd=0.005
 	}
 
-	return robot_hw_->send_realtime_effort_command(interface_, effort_array);
+	return robot_hw_->send_realtime_effort_command(interface_, effort_array, kp_array, kd_array);
 }
 
 bool HardwareAdapter::sendMitCommand(const std::vector<double>& positions,
                                      const std::vector<double>& velocities,
-                                     const std::vector<double>& efforts) {
+                                     const std::vector<double>& efforts,
+                                     const std::vector<double>& kps,
+                                     const std::vector<double>& kds) {
 	if (!robot_hw_ || positions.size() != num_joints_ ||
 	    velocities.size() != num_joints_ || efforts.size() != num_joints_ ||
 	    num_joints_ > 6) {
@@ -85,15 +108,19 @@ bool HardwareAdapter::sendMitCommand(const std::vector<double>& positions,
 	std::array<double, 6> pos_array{};
 	std::array<double, 6> vel_array{};
 	std::array<double, 6> effort_array{};
+	std::array<double, 6> kp_array{};
+	std::array<double, 6> kd_array{};
 
 	for (size_t i = 0; i < num_joints_; ++i) {
 		pos_array[i] = positions[i];
 		vel_array[i] = velocities[i];
 		effort_array[i] = efforts[i];
+		kp_array[i] = (i < kps.size()) ? kps[i] : 0.05;  // 默认kp=0.05
+		kd_array[i] = (i < kds.size()) ? kds[i] : 0.005; // 默认kd=0.005
 	}
 
 	return robot_hw_->send_realtime_mit_command(interface_, pos_array,
-	                                            vel_array, effort_array);
+	                                            vel_array, effort_array, kp_array, kd_array);
 }
 
 // === 轨迹执行接口实现 ===
