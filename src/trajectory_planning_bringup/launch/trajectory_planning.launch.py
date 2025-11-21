@@ -14,6 +14,8 @@ def launch_moveit_config(context, *args, **kwargs):
         config_pkg = 'arm620_config'
     elif robot_model_name == 'arm380':
         config_pkg = 'arm380_config'
+    elif robot_model_name == 'dual_arm620':
+        config_pkg = 'dual_arm_config'
     else:
         raise ValueError(f'Unsupported robot model name: {robot_model_name}')
     
@@ -33,7 +35,7 @@ def generate_launch_description():  # 修复：添加了括号
     
     robot_model_arg = DeclareLaunchArgument(
         'robot_model_name',
-        default_value='arm620',
+        default_value='dual_arm620',
         description='Robot model name (e.g., arm620 or arm380)'
     )
     
