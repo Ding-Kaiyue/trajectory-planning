@@ -132,9 +132,21 @@ geometry_msgs::msg::Pose MoveItAdapter::getCurrentPoseFromTF() const {
 	geometry_msgs::msg::Pose current_pose;
 
 	try {
+		if (!move_group_) {
+			RCLCPP_ERROR(node_->get_logger(), "MoveGroup not initialized");
+			return geometry_msgs::msg::Pose{};
+		}
+
+		// 从MoveGroup获取end effector link
+		std::string ee_link = move_group_->getEndEffectorLink();
+		if (ee_link.empty()) {
+			RCLCPP_ERROR(node_->get_logger(), "End effector link not found in MoveGroup");
+			return geometry_msgs::msg::Pose{};
+		}
+
 		// 使用TF获取当前位姿（避免MoveIt的时钟同步问题）
 		auto transform =
-		    tf_buffer_.lookupTransform("world", "Link6", tf2::TimePointZero);
+		    tf_buffer_.lookupTransform("world", ee_link, tf2::TimePointZero);
 		current_pose.position.x = transform.transform.translation.x;
 		current_pose.position.y = transform.transform.translation.y;
 		current_pose.position.z = transform.transform.translation.z;
