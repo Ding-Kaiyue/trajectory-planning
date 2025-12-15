@@ -41,6 +41,7 @@ public:
 	geometry_msgs::msg::Pose getCurrentPoseFromTF() const;
 	std::vector<std::pair<double, double>> getJointLimits(
 	    const std::string& arm_type = "arm620") const;
+	std::string getEndEffectorLink() const;
 
 	// ===== 运动学信息 =====
 	/**

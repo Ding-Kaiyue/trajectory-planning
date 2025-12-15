@@ -161,6 +161,13 @@ geometry_msgs::msg::Pose MoveItAdapter::getCurrentPoseFromTF() const {
 	return current_pose;
 }
 
+std::string MoveItAdapter::getEndEffectorLink() const {
+	if (!move_group_) {
+		return "";
+	}
+	return move_group_->getEndEffectorLink();
+}
+
 std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits(
     const std::string& arm_type) const {
 	std::vector<std::pair<double, double>> limits;

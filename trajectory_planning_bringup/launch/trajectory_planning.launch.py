@@ -35,7 +35,7 @@ def generate_launch_description():  # 修复：添加了括号
     
     robot_model_arg = DeclareLaunchArgument(
         'robot_model_name',
-        default_value='dual_arm620',
+        default_value='arm620',
         description='Robot model name (e.g., arm620 or arm380)'
     )
     
