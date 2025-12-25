@@ -325,6 +325,7 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 	}
 
 	robot_state->setJointGroupPositions(joint_model_group, joint_positions);
+	robot_state->update();  // 确保所有变换都更新
 
 	// 获取末端执行器链接
 	const auto& ee_link_names = joint_model_group->getLinkModelNames();
@@ -336,6 +337,9 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 
 	// 计算 Jacobian
 	Eigen::MatrixXd jacobian;
+	// 重要说明：reference_point 是在末端执行器局部坐标系中的参考点
+	// 使用 Zero() 表示参考点就是末端执行器坐标系的原点（TCP点）
+	// MoveIt的getJacobian会自动返回相对于base坐标系的Jacobian
 	Eigen::Vector3d reference_point = Eigen::Vector3d::Zero();
 
 	const auto* ee_link_model = robot_state->getLinkModel(ee_link_name);
@@ -345,10 +349,27 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 		return Eigen::MatrixXd();
 	}
 
+	// MoveIt的getJacobian默认返回相对于机器人base坐标系（通常是base_link）的Jacobian
 	if (!robot_state->getJacobian(joint_model_group, ee_link_model, reference_point,
 	                              jacobian)) {
 		RCLCPP_ERROR(node_->get_logger(), "Failed to compute Jacobian");
 		return Eigen::MatrixXd();
+	}
+
+	// 验证Jacobian的有效性
+	if (jacobian.hasNaN()) {
+		RCLCPP_ERROR(node_->get_logger(), "Jacobian contains NaN values");
+		return Eigen::MatrixXd();
+	}
+
+	// 输出Jacobian的条件数用于调试（仅在DEBUG级别）
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
+	if (svd.singularValues().size() > 0) {
+		double min_sv = svd.singularValues()(svd.singularValues().size()-1);
+		double max_sv = svd.singularValues()(0);
+		double cond_num = (min_sv > 1e-10) ? (max_sv / min_sv) : 1e10;
+		RCLCPP_DEBUG(node_->get_logger(), "Jacobian condition number: %.3f (singular values: max=%.6f, min=%.6f)",
+		             cond_num, max_sv, min_sv);
 	}
 
 	return jacobian;
