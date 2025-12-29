@@ -11,8 +11,14 @@
 namespace trajectory_planning::infrastructure::integration {
 
 MoveItAdapter::MoveItAdapter(rclcpp::Node::SharedPtr node,
-                             const std::string& move_group_name)
-    : node_(node), tf_buffer_(node->get_clock()), tf_listener_(tf_buffer_) {
+                             const std::string& move_group_name,
+                             const std::string& controller_type)
+    : node_(node),
+      tf_buffer_(node->get_clock()),
+      tf_listener_(tf_buffer_),
+      velocity_scaling_factor_(1.0),
+      acceleration_scaling_factor_(1.0),
+      controller_type_(controller_type) {
 	move_group_ =
 	    std::make_shared<moveit::planning_interface::MoveGroupInterface>(
 	        node, move_group_name);
@@ -38,6 +44,9 @@ MoveItAdapter::MoveItAdapter(rclcpp::Node::SharedPtr node,
 	    "moveit.plugins.moveit_simple_controller_manager",
 	    RCUTILS_LOG_SEVERITY_WARN);
 	(void)ret;  // 避免未使用变量警告
+
+	// 加载速度缩放参数
+	loadScalingParameters();
 }
 
 // ===== 关节规划 =====
@@ -45,6 +54,9 @@ bool MoveItAdapter::planJointMotion(
     const std::vector<double>& target_joints,
     moveit_msgs::msg::RobotTrajectory& trajectory) {
 	if (!move_group_) return false;
+
+	// 应用速度缩放因子
+	applyScalingFactors();
 
 	move_group_->setJointValueTarget(target_joints);
 	moveit::planning_interface::MoveGroupInterface::Plan plan;
@@ -65,6 +77,9 @@ bool MoveItAdapter::planPoseGoal(
     moveit_msgs::msg::RobotTrajectory& trajectory) {
 	if (!move_group_) return false;
 
+	// 应用速度缩放因子
+	applyScalingFactors();
+
 	move_group_->setPoseTarget(target_pose);
 	moveit::planning_interface::MoveGroupInterface::Plan plan;
 	bool success =
@@ -84,6 +99,9 @@ bool MoveItAdapter::planCartesianPath(
     moveit_msgs::msg::RobotTrajectory& trajectory, double eef_step,
     double jump_threshold) {
 	if (!move_group_) return false;
+
+	// 应用速度缩放因子
+	applyScalingFactors();
 
 	double fraction = move_group_->computeCartesianPath(
 	    waypoints, eef_step, jump_threshold, trajectory);
@@ -373,6 +391,94 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 	}
 
 	return jacobian;
+}
+
+// ===== 速度缩放参数管理 =====
+void MoveItAdapter::loadScalingParameters() {
+	// 声明全局参数
+	if (!node_->has_parameter("velocity_scaling_factor")) {
+		node_->declare_parameter("velocity_scaling_factor", 1.0);
+	}
+	if (!node_->has_parameter("acceleration_scaling_factor")) {
+		node_->declare_parameter("acceleration_scaling_factor", 1.0);
+	}
+
+	// 读取全局默认值
+	velocity_scaling_factor_ = node_->get_parameter("velocity_scaling_factor").as_double();
+	acceleration_scaling_factor_ = node_->get_parameter("acceleration_scaling_factor").as_double();
+
+	// 如果指定了控制器类型，尝试读取专用参数
+	if (!controller_type_.empty()) {
+		std::string vel_param = controller_type_ + ".velocity_scaling_factor";
+		std::string acc_param = controller_type_ + ".acceleration_scaling_factor";
+
+		if (node_->has_parameter(vel_param)) {
+			velocity_scaling_factor_ = node_->get_parameter(vel_param).as_double();
+			RCLCPP_INFO(node_->get_logger(),
+						"Using controller-specific velocity scaling from '%s': %.2f",
+						vel_param.c_str(), velocity_scaling_factor_);
+		}
+
+		if (node_->has_parameter(acc_param)) {
+			acceleration_scaling_factor_ = node_->get_parameter(acc_param).as_double();
+		}
+	}
+
+	// 参数范围验证 [0.0, 1.0]
+	if (velocity_scaling_factor_ < 0.0 || velocity_scaling_factor_ > 1.0) {
+		RCLCPP_WARN(node_->get_logger(),
+					"velocity_scaling_factor (%.2f) out of range [0.0, 1.0], clamping",
+					velocity_scaling_factor_);
+		velocity_scaling_factor_ = std::clamp(velocity_scaling_factor_, 0.0, 1.0);
+	}
+
+	if (acceleration_scaling_factor_ < 0.0 || acceleration_scaling_factor_ > 1.0) {
+		RCLCPP_WARN(node_->get_logger(),
+					"acceleration_scaling_factor (%.2f) out of range [0.0, 1.0], clamping",
+					acceleration_scaling_factor_);
+		acceleration_scaling_factor_ = std::clamp(acceleration_scaling_factor_, 0.0, 1.0);
+	}
+
+	RCLCPP_INFO(node_->get_logger(),
+				"MoveIt scaling factors: velocity=%.2f, acceleration=%.2f",
+				velocity_scaling_factor_, acceleration_scaling_factor_);
+}
+
+void MoveItAdapter::applyScalingFactors() {
+	// 实时读取参数（支持运行时修改）
+	if (node_->has_parameter("velocity_scaling_factor")) {
+		velocity_scaling_factor_ = node_->get_parameter("velocity_scaling_factor").as_double();
+		velocity_scaling_factor_ = std::clamp(velocity_scaling_factor_, 0.0, 1.0);
+	}
+
+	if (node_->has_parameter("acceleration_scaling_factor")) {
+		acceleration_scaling_factor_ = node_->get_parameter("acceleration_scaling_factor").as_double();
+		acceleration_scaling_factor_ = std::clamp(acceleration_scaling_factor_, 0.0, 1.0);
+	}
+
+	// 检查控制器专用参数（优先级更高）
+	if (!controller_type_.empty()) {
+		std::string vel_param = controller_type_ + ".velocity_scaling_factor";
+		if (node_->has_parameter(vel_param)) {
+			velocity_scaling_factor_ = node_->get_parameter(vel_param).as_double();
+			velocity_scaling_factor_ = std::clamp(velocity_scaling_factor_, 0.0, 1.0);
+		}
+
+		std::string acc_param = controller_type_ + ".acceleration_scaling_factor";
+		if (node_->has_parameter(acc_param)) {
+			acceleration_scaling_factor_ = node_->get_parameter(acc_param).as_double();
+			acceleration_scaling_factor_ = std::clamp(acceleration_scaling_factor_, 0.0, 1.0);
+		}
+	}
+
+	// 应用到 MoveGroupInterface
+	move_group_->setMaxVelocityScalingFactor(velocity_scaling_factor_);
+	move_group_->setMaxAccelerationScalingFactor(acceleration_scaling_factor_);
+
+	RCLCPP_INFO(node_->get_logger(),
+				 "Applied MoveIt scaling factors - velocity: %.2f, acceleration: %.2f (controller_type: %s)",
+				 velocity_scaling_factor_, acceleration_scaling_factor_,
+				 controller_type_.empty() ? "none" : controller_type_.c_str());
 }
 
 }  // namespace trajectory_planning::infrastructure::integration

@@ -16,7 +16,8 @@ namespace trajectory_planning::infrastructure::integration {
 class MoveItAdapter {
 public:
 	MoveItAdapter(rclcpp::Node::SharedPtr node,
-	              const std::string& move_group_name);
+	              const std::string& move_group_name,
+	              const std::string& controller_type = "");
 
 	// ===== 关节空间 =====
 	bool planJointMotion(const std::vector<double>& target_joints,
@@ -68,6 +69,15 @@ private:
 	    joint_state_sub_;
 	sensor_msgs::msg::JointState::SharedPtr latest_joint_state_;
 	std::mutex joint_state_mutex_;
+
+	// 速度缩放参数
+	double velocity_scaling_factor_;
+	double acceleration_scaling_factor_;
+	std::string controller_type_;  // "movej", "movel", "movec" 或空字符串
+
+	// 参数管理方法
+	void loadScalingParameters();
+	void applyScalingFactors();
 };
 
 }  // namespace trajectory_planning::infrastructure::integration
