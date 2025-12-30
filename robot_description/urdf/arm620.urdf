@@ -96,8 +96,9 @@
     <limit
       lower="-2.967"
       upper="2.967"
-      effort="0"
-      velocity="0" />
+      effort="51"
+      velocity="3.14" 
+      acceleration="2.62" />
   </joint>
   <link
     name="Link2">
@@ -154,8 +155,9 @@
     <limit
       lower="-1.5708"
       upper="1.5708"
-      effort="0"
-      velocity="0" />
+      effort="51"
+      velocity="3.14" 
+      acceleration="2.62" />
   </joint>
   <link
     name="Link3">
@@ -212,8 +214,9 @@
     <limit
       lower="-1.5708"
       upper="1.5708"
-      effort="0"
-      velocity="0" />
+      effort="51"
+      velocity="3.14" 
+      acceleration="2.62" />
   </joint>
   <link
     name="Link4">
@@ -270,8 +273,9 @@
     <limit
       lower="-2.967"
       upper="2.967"
-      effort="0"
-      velocity="0" />
+      effort="9"
+      velocity="3.14" 
+      acceleration="2.62" />
   </joint>
   <link
     name="Link5">
@@ -328,8 +332,9 @@
     <limit
       lower="-1.5708"
       upper="1.5708"
-      effort="0"
-      velocity="0" />
+      effort="9"
+      velocity="3.14" 
+      acceleration="2.62" />
   </joint>
   <link
     name="Link6">
@@ -386,8 +391,9 @@
     <limit
       lower="-2.967"
       upper="2.967"
-      effort="0"
-      velocity="0" />
+      effort="9"
+      velocity="3.14" 
+      acceleration="2.62" />
   </joint>
   <link name="world"/>
   <joint name="base_joint" type="fixed">
