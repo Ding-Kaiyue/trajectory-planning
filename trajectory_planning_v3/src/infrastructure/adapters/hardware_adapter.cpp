@@ -187,6 +187,8 @@ bool HardwareAdapter::disableAllJoints() {
 	for (const auto& point : domain_points) {
 		::TrajectoryPoint hw_point;
 		hw_point.time_from_start = point.time_from_start.seconds();
+
+		// Convert value objects to std::vector<double>
 		hw_point.positions = point.position.values();
 		hw_point.velocities = point.velocity.values();
 		hw_point.accelerations = point.acceleration.values();

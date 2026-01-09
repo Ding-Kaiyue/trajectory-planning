@@ -1,18 +1,56 @@
 #include "trajectory_planning_v3/application/services/motion_planning_service.hpp"
 
 #include "trajectory_planning_v3/infrastructure/integration/moveit_adapter.hpp"
+#include "trajectory_planning_v3/infrastructure/integration/tracik_adapter.hpp"
 
 namespace trajectory_planning::application::services {
 
+using namespace trajectory_planning::infrastructure::integration;
+using namespace trajectory_planning::infrastructure::planning;
+
 MotionPlanningService::MotionPlanningService(
-    std::shared_ptr<MoveItAdapter> moveit_adapter, rclcpp::Node::SharedPtr node)
+    std::shared_ptr<MoveItAdapter> moveit_adapter,
+    std::shared_ptr<TracIKAdapter> tracik_adapter,
+    rclcpp::Node::SharedPtr node)
     : movej_strategy_(nullptr),
       movel_strategy_(nullptr),
       movec_strategy_(nullptr),
       joint_constrained_strategy_(nullptr),
       moveit_adapter_(moveit_adapter),
+      tracik_adapter_(tracik_adapter),
       node_(node),
-      logger_(node->get_logger()) {}
+      logger_(node->get_logger()) {
+	// 初始化 TracIKAdapter（用于 MoveL 规划）
+	tracik_adapter_->setMoveItAdapter(moveit_adapter_.get());
+
+	// 获取机械臂类型
+	std::string arm_type = "arm620";  // 默认值
+	if (node_->has_parameter("arm_type")) {
+		arm_type = node_->get_parameter("arm_type").as_string();
+	}
+
+	// 从 MoveItAdapter 获取 URDF
+	std::string urdf_string = moveit_adapter_->getURDFString(arm_type);
+	if (urdf_string.empty()) {
+		RCLCPP_WARN(logger_, "Failed to get URDF string for arm_type: %s", arm_type.c_str());
+	} else {
+		std::string base_link = "base_link";
+		std::string end_effector_link = moveit_adapter_->getEndEffectorLink();
+		if (!end_effector_link.empty()) {
+			if (tracik_adapter_->initializeKDLChain(urdf_string, base_link, end_effector_link)) {
+				if (tracik_adapter_->initializeSolver(arm_type)) {
+					RCLCPP_INFO(logger_, "TracIKAdapter initialized for arm_type: %s", arm_type.c_str());
+				} else {
+					RCLCPP_WARN(logger_, "Failed to initialize TRAC_IK solver for arm_type: %s", arm_type.c_str());
+				}
+			} else {
+				RCLCPP_WARN(logger_, "Failed to initialize KDL chain for arm_type: %s", arm_type.c_str());
+			}
+		} else {
+			RCLCPP_WARN(logger_, "Failed to get end effector link from MoveItAdapter");
+		}
+	}
+}
 
 void MotionPlanningService::registerMoveJStrategy(
     std::shared_ptr<MoveJPlanningStrategy> strategy) {
@@ -32,7 +70,7 @@ void MotionPlanningService::registerMoveLStrategy(
 }
 
 void MotionPlanningService::registerMoveLStrategy() {
-	movel_strategy_ = std::make_shared<MoveLPlanningStrategy>(*moveit_adapter_);
+	movel_strategy_ = std::make_shared<MoveLPlanningStrategy>(moveit_adapter_, tracik_adapter_);
 	RCLCPP_INFO(logger_, "MoveL strategy created and registered");
 }
 
@@ -81,21 +119,22 @@ PlanningResult MotionPlanningService::planJointMotion(
 }
 
 PlanningResult MotionPlanningService::planLinearMotion(
-    const geometry_msgs::msg::Pose& goal,
-    MoveLPlanningStrategy::PlanningType planning_type) {
+    const geometry_msgs::msg::Pose& goal) {
 	if (!movel_strategy_) {
 		return createFailureResult("MoveL", "Strategy not initialized");
 	}
 
 	try {
-		Trajectory trajectory = movel_strategy_->plan(goal, planning_type);
+		Trajectory trajectory = movel_strategy_->planWithJointConstraints(goal);
+
 		if (trajectory.empty()) {
-			return createFailureResult("MoveL",
-			                           "Planning failed");
+			RCLCPP_ERROR(logger_, "❎ MoveL: Planning strategy returned empty trajectory");
+			return createFailureResult("MoveL", "Planning failed");
 		}
 
 		return createSuccessResult(trajectory, "MoveL");
 	} catch (const std::exception& e) {
+		RCLCPP_ERROR(logger_, "❎ MoveL: Exception during planning: %s", e.what());
 		return createFailureResult("MoveL",
 		                           std::string("Exception: ") + e.what());
 	}

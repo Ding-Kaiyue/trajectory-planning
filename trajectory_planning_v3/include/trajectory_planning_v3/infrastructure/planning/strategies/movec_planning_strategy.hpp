@@ -88,6 +88,16 @@ private:
 
 	domain::entities::Trajectory convertTrajectoryType(
 	    const moveit_msgs::msg::RobotTrajectory& moveit_traj) const;
+
+	/**
+	 * @brief 根据路径长度动态计算采样点数
+	 * @param path_length 路径总长度（单位：米）
+	 * @param min_points 最小采样点数（默认10）
+	 * @param sampling_interval 采样间距（默认0.01m，即10mm）
+	 * @return 计算得到的采样点数
+	 */
+	int calculateNumPoints(double path_length, int min_points = 10,
+	                        double sampling_interval = 0.01) const;
 };
 
 }  // namespace trajectory_planning::infrastructure::planning

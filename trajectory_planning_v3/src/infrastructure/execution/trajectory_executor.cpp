@@ -28,17 +28,19 @@ bool TrajectoryExecutor::execute(
 
 	for (const auto& point : trajectory.points()) {
 		trajectory_msgs::msg::JointTrajectoryPoint jt_point;
-		jt_point.positions = point.position.values();
+
+		// Convert Eigen::VectorXd to std::vector<double>
+		jt_point.positions.assign(point.position.values().data(),
+		                          point.position.values().data() + point.position.size());
 
 		// 速度和加速度可以先填空或者全零
 		jt_point.velocities.resize(point.position.size(), 0.0);
 		jt_point.accelerations.resize(point.position.size(), 0.0);
 
-		jt_point.time_from_start.sec =
-		    static_cast<int>(point.time_from_start.seconds());
-		jt_point.time_from_start.nanosec = static_cast<uint32_t>(
-		    (point.time_from_start.seconds() - jt_point.time_from_start.sec) *
-		    1e9);
+		double time_sec = point.time_from_start.seconds();
+		jt_point.time_from_start.sec = static_cast<int>(time_sec);
+		jt_point.time_from_start.nanosec =
+		    static_cast<uint32_t>((time_sec - jt_point.time_from_start.sec) * 1e9);
 
 		moveit_trajectory.joint_trajectory.points.push_back(jt_point);
 	}

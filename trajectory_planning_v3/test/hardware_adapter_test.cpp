@@ -100,27 +100,27 @@ int main(int argc, char* argv[]) {
         for (size_t i = 0; i < moveit_positions.size(); i++) {
             const auto& data = moveit_positions[i];
             double time = data[0];
-            
+
             // 将弧度转换为度数 (rad * 180 / π)
             std::vector<double> positions_rad = {data[1], data[2], data[3], data[4], data[5], data[6]};
             std::vector<double> positions_deg(6);
             for (size_t j = 0; j < 6; j++) {
                 positions_deg[j] = positions_rad[j] * 180.0 / M_PI;
             }
-            
-            trajectory_planning::domain::entities::TrajectoryPoint point {
-                .position = trajectory_planning::domain::value_objects::JointPosition(positions_deg),
-                .velocity = trajectory_planning::domain::value_objects::JointVelocity({0.0, 0.0, 0.0, 0.0, 0.0, 0.0}),
-                .acceleration = trajectory_planning::domain::value_objects::JointAcceleration({0.0, 0.0, 0.0, 0.0, 0.0, 0.0}),
+
+            trajectory_planning::domain::entities::TrajectoryPoint point{
+                .position = trajectory_planning::domain::value_objects::JointPosition(positions_rad),
+                .velocity = trajectory_planning::domain::value_objects::JointVelocity(std::vector<double>(6, 0.0)),
+                .acceleration = trajectory_planning::domain::value_objects::JointAcceleration(std::vector<double>(6, 0.0)),
                 .time_from_start = trajectory_planning::domain::value_objects::Duration(time),
-                .progress_ratio = static_cast<double>(i) / (moveit_positions.size() - 1)
             };
+
             trajectory.add_point(point);
-            
-            std::cout << "  Point[" << i << "] time=" << std::fixed << std::setprecision(3) << time 
-                     << "s pos_rad=[" << std::setprecision(4) 
+
+            std::cout << "  Point[" << i << "] time=" << std::fixed << std::setprecision(3) << time
+                     << "s pos_rad=[" << std::setprecision(4)
                      << positions_rad[0] << ", " << positions_rad[1] << ", " << positions_rad[2] << ", "
-                     << positions_rad[3] << ", " << positions_rad[4] << ", " << positions_rad[5] 
+                     << positions_rad[3] << ", " << positions_rad[4] << ", " << positions_rad[5]
                      << "] pos_deg=[" << std::setprecision(2)
                      << positions_deg[0] << ", " << positions_deg[1] << ", " << positions_deg[2] << ", "
                      << positions_deg[3] << ", " << positions_deg[4] << ", " << positions_deg[5] << "]" << std::endl;

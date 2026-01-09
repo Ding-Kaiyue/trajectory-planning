@@ -8,11 +8,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include "trajectory_planning_v3/domain/value_objects/duration.hpp"
-#include "trajectory_planning_v3/domain/value_objects/joint_acceleration.hpp"
-#include "trajectory_planning_v3/domain/value_objects/joint_position.hpp"
-#include "trajectory_planning_v3/domain/value_objects/joint_velocity.hpp"
-
 namespace trajectory_planning::infrastructure::planning {
 
 domain::entities::Trajectory MoveCPlanningStrategy::planArc(
@@ -42,7 +37,19 @@ domain::entities::Trajectory MoveCPlanningStrategy::planArc(
 		    rclcpp::get_logger("MoveCPlanningStrategy"),
 		    "Points are nearly collinear, generating linear trajectory");
 
-		const int num_points = 50;
+		// 计算路径长度
+		double dx = goal_pose.position.x - start_pose.position.x;
+		double dy = goal_pose.position.y - start_pose.position.y;
+		double dz = goal_pose.position.z - start_pose.position.z;
+		double path_length = std::sqrt(dx*dx + dy*dy + dz*dz);
+
+		// 根据路径长度动态计算采样点数
+		int num_points = calculateNumPoints(path_length);
+
+		RCLCPP_DEBUG(rclcpp::get_logger("MoveCPlanningStrategy"),
+		             "Linear path: length=%.3fm, num_points=%d",
+		             path_length, num_points);
+
 		std::vector<geometry_msgs::msg::Pose> waypoints;
 		waypoints.reserve(num_points + 1);
 
@@ -122,8 +129,20 @@ domain::entities::Trajectory MoveCPlanningStrategy::planArc(
 
 	const double delta = a_goal - a_start;
 
-	// 采样
-	const int num_points = 80;  // 更密的弧线
+	// 计算圆弧长度
+	double arc_length = std::abs(delta) * r;
+	// 计算Z轴变化长度
+	double z_length = std::abs(goal_pose.position.z - start_pose.position.z);
+	// 总路径长度
+	double total_length = std::sqrt(arc_length * arc_length + z_length * z_length);
+
+	// 根据路径长度动态计算采样点数
+	int num_points = calculateNumPoints(total_length);
+
+	RCLCPP_DEBUG(rclcpp::get_logger("MoveCPlanningStrategy"),
+	             "Arc path: length=%.3fm, arc=%.3fm, z=%.3fm, num_points=%d",
+	             total_length, arc_length, z_length, num_points);
+
 	std::vector<geometry_msgs::msg::Pose> waypoints;
 	waypoints.reserve(num_points + 1);
 
@@ -167,8 +186,24 @@ domain::entities::Trajectory MoveCPlanningStrategy::planBezier(
     const geometry_msgs::msg::Pose& ctrl1,
     const geometry_msgs::msg::Pose& ctrl2,
     const geometry_msgs::msg::Pose& goal) {
+	// 粗略估计贝塞尔曲线长度（用四个控制点间的距离之和）
+	double length_approx = 0.0;
+	std::vector<const geometry_msgs::msg::Pose*> points = {&start, &ctrl1, &ctrl2, &goal};
+	for (size_t i = 1; i < points.size(); ++i) {
+		double dx = points[i]->position.x - points[i-1]->position.x;
+		double dy = points[i]->position.y - points[i-1]->position.y;
+		double dz = points[i]->position.z - points[i-1]->position.z;
+		length_approx += std::sqrt(dx*dx + dy*dy + dz*dz);
+	}
+
+	// 根据曲线长度动态计算采样点数
+	int num_points = calculateNumPoints(length_approx);
+
+	RCLCPP_DEBUG(rclcpp::get_logger("MoveCPlanningStrategy"),
+	             "Bezier path: length_approx=%.3fm, num_points=%d",
+	             length_approx, num_points);
+
 	std::vector<geometry_msgs::msg::Pose> bezier_waypoints;
-	const int num_points = 20;  // 可配置的采样点数量
 
 	for (int i = 0; i <= num_points; ++i) {
 		double t = static_cast<double>(i) / num_points;
@@ -229,11 +264,18 @@ domain::entities::Trajectory MoveCPlanningStrategy::planCircle(
     const geometry_msgs::msg::Pose& center,
     const geometry_msgs::msg::Pose& radius_point) {
 	std::vector<geometry_msgs::msg::Pose> circle_waypoints;
-	const int num_points = 36;  // 36个点形成完整圆
 
 	double radius =
 	    std::sqrt(std::pow(radius_point.position.x - center.position.x, 2) +
 	              std::pow(radius_point.position.y - center.position.y, 2));
+
+	// 整圆周长 = 2πr，根据周长动态计算采样点数
+	double circle_length = 2 * M_PI * radius;
+	int num_points = calculateNumPoints(circle_length);
+
+	RCLCPP_DEBUG(rclcpp::get_logger("MoveCPlanningStrategy"),
+	             "Circle path: radius=%.3fm, length=%.3fm, num_points=%d",
+	             radius, circle_length, num_points);
 
 	for (int i = 0; i <= num_points; ++i) {
 		double angle = 2 * M_PI * i / num_points;
@@ -311,8 +353,21 @@ domain::entities::Trajectory MoveCPlanningStrategy::planCircleThrough3Points(
 	}
 
 	std::vector<geometry_msgs::msg::Pose> circle_waypoints;
-	const int num_points = 20;
 	double radius = std::sqrt((x1 - ux) * (x1 - ux) + (y1 - uy) * (y1 - uy));
+
+	// 计算弧长（从start_angle到end_angle）
+	double arc_length = std::abs(end_angle - start_angle) * radius;
+	// 计算Z轴变化
+	double z_length = std::abs(p3.position.z - p1.position.z);
+	// 总路径长度
+	double total_length = std::sqrt(arc_length * arc_length + z_length * z_length);
+
+	// 根据路径长度动态计算采样点数
+	int num_points = calculateNumPoints(total_length);
+
+	RCLCPP_DEBUG(rclcpp::get_logger("MoveCPlanningStrategy"),
+	             "Circle3Pt path: radius=%.3fm, arc=%.3fm, z=%.3fm, num_points=%d",
+	             radius, arc_length, z_length, num_points);
 
 	for (int i = 0; i <= num_points; ++i) {
 		double t = static_cast<double>(i) / num_points;
@@ -356,28 +411,51 @@ domain::entities::Trajectory MoveCPlanningStrategy::convertTrajectoryType(
 
 	// 将 MoveIt trajectory 转换为我们的 Trajectory 对象
 	for (const auto& point : moveit_traj.joint_trajectory.points) {
-		domain::entities::TrajectoryPoint traj_point{
-		    .position = domain::value_objects::JointPosition(point.positions),
-		    .velocity = domain::value_objects::JointVelocity(
-		        point.velocities.empty()
-		            ? std::vector<double>(point.positions.size(), 0.0)
-		            : point.velocities),
-		    .acceleration = domain::value_objects::JointAcceleration(
-		        point.accelerations.empty()
-		            ? std::vector<double>(point.positions.size(), 0.0)
-		            : point.accelerations),
-		    .time_from_start = domain::value_objects::Duration(
-		        static_cast<double>(point.time_from_start.sec) +
-		        static_cast<double>(point.time_from_start.nanosec) * 1e-9),
-		    .progress_ratio = 0.0};
+		double time_sec = static_cast<double>(point.time_from_start.sec) +
+		                  static_cast<double>(point.time_from_start.nanosec) * 1e-9;
 
-		trajectory.add_point(traj_point);
+		std::vector<double> velocities = point.velocities;
+		if (velocities.empty()) {
+			velocities = std::vector<double>(point.positions.size(), 0.0);
+		}
+
+		std::vector<double> accelerations = point.accelerations;
+		if (accelerations.empty()) {
+			accelerations = std::vector<double>(point.positions.size(), 0.0);
+		}
+
+		trajectory.add_point({
+		    .position = domain::value_objects::JointPosition(point.positions),
+		    .velocity = domain::value_objects::JointVelocity(velocities),
+		    .acceleration = domain::value_objects::JointAcceleration(accelerations),
+		    .time_from_start = domain::value_objects::Duration(time_sec),
+		});
 	}
 
 	// 计算 progress_ratio
 	trajectory.compute_progress_ratios();
 
 	return trajectory;
+}
+
+int MoveCPlanningStrategy::calculateNumPoints(double path_length, int min_points,
+                                              double sampling_interval) const {
+	// 根据路径长度动态计算采样点数
+	// 公式: num_points = max(min_points, ceil(path_length / sampling_interval))
+
+	if (path_length < 1e-6) {
+		// 路径长度太小，使用最小点数
+		return min_points;
+	}
+
+	int calculated_points = static_cast<int>(std::ceil(path_length / sampling_interval));
+	int num_points = std::max(min_points, calculated_points);
+
+	// 限制最大采样点数，避免过度采样导致 IK 求解失败
+	const int max_points = 100;
+	num_points = std::min(num_points, max_points);
+
+	return num_points;
 }
 
 }  // namespace trajectory_planning::infrastructure::planning

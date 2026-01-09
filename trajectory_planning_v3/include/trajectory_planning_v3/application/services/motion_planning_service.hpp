@@ -9,6 +9,8 @@
 #include "trajectory_planning_interfaces/msg/move_c_request.hpp"
 #include "trajectory_planning_v3/domain/entities/trajectory.hpp"
 #include "trajectory_planning_v3/domain/value_objects/joint_position.hpp"
+#include "trajectory_planning_v3/infrastructure/integration/moveit_adapter.hpp"
+#include "trajectory_planning_v3/infrastructure/integration/tracik_adapter.hpp"
 #include "trajectory_planning_v3/infrastructure/planning/strategies/joint_constrained_planning_strategy.hpp"
 #include "trajectory_planning_v3/infrastructure/planning/strategies/movec_planning_strategy.hpp"
 #include "trajectory_planning_v3/infrastructure/planning/strategies/movej_planning_strategy.hpp"
@@ -19,7 +21,6 @@ namespace trajectory_planning::application::services {
 using namespace trajectory_planning::domain::entities;
 using namespace trajectory_planning::domain::value_objects;
 using namespace trajectory_planning::infrastructure::planning;
-using namespace trajectory_planning::infrastructure::integration;
 
 struct PlanningResult {
 	Trajectory trajectory;
@@ -33,7 +34,8 @@ struct PlanningResult {
 class MotionPlanningService {
 public:
 	// 简化的构造函数
-	MotionPlanningService(std::shared_ptr<MoveItAdapter> moveit_adapter,
+	MotionPlanningService(std::shared_ptr<infrastructure::integration::MoveItAdapter> moveit_adapter,
+	                      std::shared_ptr<infrastructure::integration::TracIKAdapter> tracik_adapter,
 	                      rclcpp::Node::SharedPtr node);
 
 	// 策略注册方法
@@ -51,9 +53,7 @@ public:
 	PlanningResult planJointMotion(const sensor_msgs::msg::JointState& goal);
 
 	// 直线运动规划
-	PlanningResult planLinearMotion(
-	    const geometry_msgs::msg::Pose& goal,
-	    MoveLPlanningStrategy::PlanningType planning_type = MoveLPlanningStrategy::PlanningType::INTELLIGENT);
+	PlanningResult planLinearMotion(const geometry_msgs::msg::Pose& goal);
 
 	// 圆弧运动规划
 	PlanningResult planArcMotion(
@@ -69,10 +69,14 @@ private:
 	std::shared_ptr<MoveCPlanningStrategy> movec_strategy_;
 	std::shared_ptr<JointConstrainedPlanningStrategy>
 	    joint_constrained_strategy_;
-	std::shared_ptr<MoveItAdapter> moveit_adapter_;
+	std::shared_ptr<infrastructure::integration::MoveItAdapter> moveit_adapter_;
+	std::shared_ptr<infrastructure::integration::TracIKAdapter> tracik_adapter_;
 
 	rclcpp::Node::SharedPtr node_;
 	rclcpp::Logger logger_;
+
+	// Current joint state (for IK seed in continuous planning)
+	std::vector<double> current_joint_state_;
 
 	// 辅助方法
 	Trajectory planArcTrajectory(

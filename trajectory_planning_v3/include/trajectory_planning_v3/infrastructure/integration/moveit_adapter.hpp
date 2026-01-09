@@ -28,11 +28,28 @@ public:
 	bool planPoseGoal(const geometry_msgs::msg::Pose& target_pose,
 	                  moveit_msgs::msg::RobotTrajectory& trajectory);
 
+	/**
+	 * @brief 位姿规划 - 多次尝试找最短轨迹
+	 * 当笛卡尔规划失败时回退使用，多次规划以避免选择"绕远路"的解
+	 * @param target_pose 目标位姿
+	 * @param trajectory 输出轨迹
+	 * @param max_attempts 最多尝试次数（默认5次）
+	 * @return 规划是否成功
+	 */
+	bool planPoseGoalMultiAttempt(const geometry_msgs::msg::Pose& target_pose,
+	                               moveit_msgs::msg::RobotTrajectory& trajectory,
+	                               int max_attempts = 5);
+
 	bool planCartesianPath(
 	    const std::vector<geometry_msgs::msg::Pose>& waypoints,
 	    moveit_msgs::msg::RobotTrajectory& trajectory, double eef_step = 0.01,
 	    double jump_threshold = 0.0);
-
+	
+	bool planCartesianPathMultiAttempt(
+		const std::vector<geometry_msgs::msg::Pose>& waypoints,
+		moveit_msgs::msg::RobotTrajectory& trajectory,
+		int max_attempts = 3); 
+		
 	// ===== 执行统一接口 =====
 	bool executeTrajectory(const moveit_msgs::msg::RobotTrajectory& trajectory);
 
@@ -42,7 +59,35 @@ public:
 	geometry_msgs::msg::Pose getCurrentPoseFromTF() const;
 	std::vector<std::pair<double, double>> getJointLimits(
 	    const std::string& arm_type = "arm620") const;
+
 	std::string getEndEffectorLink() const;
+	std::vector<double> getCurrentJointState() const;
+
+	// ===== 获取缩放参数 =====
+	/**
+	 * @brief 获取速度缩放因子
+	 * @return 当前速度缩放因子（0.0~1.0）
+	 */
+	double getVelocityScalingFactor() const { return velocity_scaling_factor_; }
+
+	/**
+	 * @brief 获取加速度缩放因子
+	 * @return 当前加速度缩放因子（0.0~1.0）
+	 */
+	double getAccelerationScalingFactor() const { return acceleration_scaling_factor_; }
+
+	/**
+	 * @brief 获取 URDF 字符串
+	 * @param arm_type 机械臂类型（如 "arm620", "arm380"），空字符串时尝试自动检测
+	 * @return URDF 字符串，如果失败返回空字符串
+	 */
+	std::string getURDFString(const std::string& arm_type = "") const;
+
+	/**
+	 * @brief 获取 MoveIt 的机器人模型
+	 * @return 指向 RobotModel 的 shared_ptr，如果失败返回 nullptr
+	 */
+	moveit::core::RobotModelPtr getRobotModel() const;
 
 	// ===== 运动学信息 =====
 	/**
@@ -68,7 +113,7 @@ private:
 	rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
 	    joint_state_sub_;
 	sensor_msgs::msg::JointState::SharedPtr latest_joint_state_;
-	std::mutex joint_state_mutex_;
+	mutable std::mutex joint_state_mutex_;
 
 	// 速度缩放参数
 	double velocity_scaling_factor_;
@@ -78,6 +123,10 @@ private:
 	// 参数管理方法
 	void loadScalingParameters();
 	void applyScalingFactors();
+
+	// 关节限位缓存（避免重复加载YAML文件）
+	mutable std::map<std::string, std::vector<std::pair<double, double>>> joint_limits_cache_;
+	mutable std::mutex joint_limits_cache_mutex_;
 };
 
 }  // namespace trajectory_planning::infrastructure::integration

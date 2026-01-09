@@ -6,11 +6,6 @@
 #include <random>
 #include <rclcpp/rclcpp.hpp>
 
-#include "trajectory_planning_v3/domain/value_objects/duration.hpp"
-#include "trajectory_planning_v3/domain/value_objects/joint_acceleration.hpp"
-#include "trajectory_planning_v3/domain/value_objects/joint_position.hpp"
-#include "trajectory_planning_v3/domain/value_objects/joint_velocity.hpp"
-
 namespace trajectory_planning::infrastructure::planning {
 
 void JointConstrainedPlanningStrategy::addConstraint(
@@ -386,22 +381,25 @@ JointConstrainedPlanningStrategy::convertTrajectoryType(
 
 	// 将 MoveIt trajectory 转换为我们的 Trajectory 对象
 	for (const auto& point : moveit_traj.joint_trajectory.points) {
-		domain::entities::TrajectoryPoint traj_point{
-		    .position = domain::value_objects::JointPosition(point.positions),
-		    .velocity = domain::value_objects::JointVelocity(
-		        point.velocities.empty()
-		            ? std::vector<double>(point.positions.size(), 0.0)
-		            : point.velocities),
-		    .acceleration = domain::value_objects::JointAcceleration(
-		        point.accelerations.empty()
-		            ? std::vector<double>(point.positions.size(), 0.0)
-		            : point.accelerations),
-		    .time_from_start = domain::value_objects::Duration(
-		        static_cast<double>(point.time_from_start.sec) +
-		        static_cast<double>(point.time_from_start.nanosec) * 1e-9),
-		    .progress_ratio = 0.0};
+		double time_sec = static_cast<double>(point.time_from_start.sec) +
+		                  static_cast<double>(point.time_from_start.nanosec) * 1e-9;
 
-		trajectory.add_point(traj_point);
+		std::vector<double> velocities = point.velocities;
+		if (velocities.empty()) {
+			velocities = std::vector<double>(point.positions.size(), 0.0);
+		}
+
+		std::vector<double> accelerations = point.accelerations;
+		if (accelerations.empty()) {
+			accelerations = std::vector<double>(point.positions.size(), 0.0);
+		}
+
+		trajectory.add_point({
+		    .position = domain::value_objects::JointPosition(point.positions),
+		    .velocity = domain::value_objects::JointVelocity(velocities),
+		    .acceleration = domain::value_objects::JointAcceleration(accelerations),
+		    .time_from_start = domain::value_objects::Duration(time_sec),
+		});
 	}
 
 	// 计算 progress_ratio

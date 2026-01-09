@@ -4,23 +4,21 @@
 #include <vector>
 
 #include "trajectory_planning_v3/domain/value_objects/duration.hpp"
-#include "trajectory_planning_v3/domain/value_objects/joint_acceleration.hpp"
 #include "trajectory_planning_v3/domain/value_objects/joint_position.hpp"
 #include "trajectory_planning_v3/domain/value_objects/joint_velocity.hpp"
+#include "trajectory_planning_v3/domain/value_objects/joint_acceleration.hpp"
 
 namespace trajectory_planning::domain::entities {
 
 /**
- * @brief 单个轨迹点
+ * @brief 轨迹点数据结构（包含所有必要的运动学信息）
  */
 struct TrajectoryPoint {
 	value_objects::JointPosition position;
 	value_objects::JointVelocity velocity;
 	value_objects::JointAcceleration acceleration;
 	value_objects::Duration time_from_start;
-
-	// 相对进度百分比 [0,1]
-	double progress_ratio = 0.0;
+	double progress_ratio = 0.0;  // 轨迹进度比（0-1）
 };
 
 /**

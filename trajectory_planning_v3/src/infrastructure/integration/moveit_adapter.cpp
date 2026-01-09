@@ -6,6 +6,7 @@
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <fstream>
+#include <sstream>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 namespace trajectory_planning::infrastructure::integration {
@@ -13,11 +14,7 @@ namespace trajectory_planning::infrastructure::integration {
 MoveItAdapter::MoveItAdapter(rclcpp::Node::SharedPtr node,
                              const std::string& move_group_name,
                              const std::string& controller_type)
-    : node_(node),
-      tf_buffer_(node->get_clock()),
-      tf_listener_(tf_buffer_),
-      velocity_scaling_factor_(1.0),
-      acceleration_scaling_factor_(1.0),
+    : node_(node), tf_buffer_(node->get_clock()), tf_listener_(tf_buffer_),
       controller_type_(controller_type) {
 	move_group_ =
 	    std::make_shared<moveit::planning_interface::MoveGroupInterface>(
@@ -30,6 +27,9 @@ MoveItAdapter::MoveItAdapter(rclcpp::Node::SharedPtr node,
 		    std::lock_guard<std::mutex> lock(joint_state_mutex_);
 		    latest_joint_state_ = msg;
 	    });
+
+	// 加载速度和加速度缩放参数
+	loadScalingParameters();
 
 	// 设置 MoveIt 相关日志器的日志级别为 WARN
 	auto ret =
@@ -44,9 +44,6 @@ MoveItAdapter::MoveItAdapter(rclcpp::Node::SharedPtr node,
 	    "moveit.plugins.moveit_simple_controller_manager",
 	    RCUTILS_LOG_SEVERITY_WARN);
 	(void)ret;  // 避免未使用变量警告
-
-	// 加载速度缩放参数
-	loadScalingParameters();
 }
 
 // ===== 关节规划 =====
@@ -54,9 +51,6 @@ bool MoveItAdapter::planJointMotion(
     const std::vector<double>& target_joints,
     moveit_msgs::msg::RobotTrajectory& trajectory) {
 	if (!move_group_) return false;
-
-	// 应用速度缩放因子
-	applyScalingFactors();
 
 	move_group_->setJointValueTarget(target_joints);
 	moveit::planning_interface::MoveGroupInterface::Plan plan;
@@ -77,9 +71,6 @@ bool MoveItAdapter::planPoseGoal(
     moveit_msgs::msg::RobotTrajectory& trajectory) {
 	if (!move_group_) return false;
 
-	// 应用速度缩放因子
-	applyScalingFactors();
-
 	move_group_->setPoseTarget(target_pose);
 	moveit::planning_interface::MoveGroupInterface::Plan plan;
 	bool success =
@@ -99,9 +90,6 @@ bool MoveItAdapter::planCartesianPath(
     moveit_msgs::msg::RobotTrajectory& trajectory, double eef_step,
     double jump_threshold) {
 	if (!move_group_) return false;
-
-	// 应用速度缩放因子
-	applyScalingFactors();
 
 	double fraction = move_group_->computeCartesianPath(
 	    waypoints, eef_step, jump_threshold, trajectory);
@@ -150,21 +138,9 @@ geometry_msgs::msg::Pose MoveItAdapter::getCurrentPoseFromTF() const {
 	geometry_msgs::msg::Pose current_pose;
 
 	try {
-		if (!move_group_) {
-			RCLCPP_ERROR(node_->get_logger(), "MoveGroup not initialized");
-			return geometry_msgs::msg::Pose{};
-		}
-
-		// 从MoveGroup获取end effector link
-		std::string ee_link = move_group_->getEndEffectorLink();
-		if (ee_link.empty()) {
-			RCLCPP_ERROR(node_->get_logger(), "End effector link not found in MoveGroup");
-			return geometry_msgs::msg::Pose{};
-		}
-
 		// 使用TF获取当前位姿（避免MoveIt的时钟同步问题）
 		auto transform =
-		    tf_buffer_.lookupTransform("world", ee_link, tf2::TimePointZero);
+		    tf_buffer_.lookupTransform("world", "Link6", tf2::TimePointZero);
 		current_pose.position.x = transform.transform.translation.x;
 		current_pose.position.y = transform.transform.translation.y;
 		current_pose.position.z = transform.transform.translation.z;
@@ -179,18 +155,22 @@ geometry_msgs::msg::Pose MoveItAdapter::getCurrentPoseFromTF() const {
 	return current_pose;
 }
 
-std::string MoveItAdapter::getEndEffectorLink() const {
-	if (!move_group_) {
-		return "";
-	}
-	return move_group_->getEndEffectorLink();
-}
-
 std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits(
     const std::string& arm_type) const {
 	std::vector<std::pair<double, double>> limits;
 
-	// 首先尝试从YAML文件直接读取关节限制
+	// 检查缓存
+	{
+		std::lock_guard<std::mutex> lock(joint_limits_cache_mutex_);
+		auto it = joint_limits_cache_.find(arm_type);
+		if (it != joint_limits_cache_.end()) {
+			RCLCPP_DEBUG(node_->get_logger(), "Using cached joint limits for %s",
+			            arm_type.c_str());
+			return it->second;
+		}
+	}
+
+	// 缓存未命中，从YAML文件加载
 	try {
 		std::string package_path = ament_index_cpp::get_package_share_directory(
 		    "trajectory_planning_v3");
@@ -233,6 +213,13 @@ std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits(
 			            "Successfully loaded joint limits for %s from YAML "
 			            "file: %zu joints",
 			            arm_type.c_str(), limits.size());
+
+			// 将结果存入缓存
+			{
+				std::lock_guard<std::mutex> lock(joint_limits_cache_mutex_);
+				joint_limits_cache_[arm_type] = limits;
+			}
+
 			return limits;
 		}
 	} catch (const std::exception& e) {
@@ -343,7 +330,6 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 	}
 
 	robot_state->setJointGroupPositions(joint_model_group, joint_positions);
-	robot_state->update();  // 确保所有变换都更新
 
 	// 获取末端执行器链接
 	const auto& ee_link_names = joint_model_group->getLinkModelNames();
@@ -355,9 +341,6 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 
 	// 计算 Jacobian
 	Eigen::MatrixXd jacobian;
-	// 重要说明：reference_point 是在末端执行器局部坐标系中的参考点
-	// 使用 Zero() 表示参考点就是末端执行器坐标系的原点（TCP点）
-	// MoveIt的getJacobian会自动返回相对于base坐标系的Jacobian
 	Eigen::Vector3d reference_point = Eigen::Vector3d::Zero();
 
 	const auto* ee_link_model = robot_state->getLinkModel(ee_link_name);
@@ -367,118 +350,190 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 		return Eigen::MatrixXd();
 	}
 
-	// MoveIt的getJacobian默认返回相对于机器人base坐标系（通常是base_link）的Jacobian
 	if (!robot_state->getJacobian(joint_model_group, ee_link_model, reference_point,
 	                              jacobian)) {
 		RCLCPP_ERROR(node_->get_logger(), "Failed to compute Jacobian");
 		return Eigen::MatrixXd();
 	}
 
-	// 验证Jacobian的有效性
-	if (jacobian.hasNaN()) {
-		RCLCPP_ERROR(node_->get_logger(), "Jacobian contains NaN values");
-		return Eigen::MatrixXd();
-	}
-
-	// 输出Jacobian的条件数用于调试（仅在DEBUG级别）
-	Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
-	if (svd.singularValues().size() > 0) {
-		double min_sv = svd.singularValues()(svd.singularValues().size()-1);
-		double max_sv = svd.singularValues()(0);
-		double cond_num = (min_sv > 1e-10) ? (max_sv / min_sv) : 1e10;
-		RCLCPP_DEBUG(node_->get_logger(), "Jacobian condition number: %.3f (singular values: max=%.6f, min=%.6f)",
-		             cond_num, max_sv, min_sv);
-	}
-
 	return jacobian;
 }
 
-// ===== 速度缩放参数管理 =====
 void MoveItAdapter::loadScalingParameters() {
-	// 声明全局参数
-	if (!node_->has_parameter("velocity_scaling_factor")) {
-		node_->declare_parameter("velocity_scaling_factor", 1.0);
-	}
-	if (!node_->has_parameter("acceleration_scaling_factor")) {
-		node_->declare_parameter("acceleration_scaling_factor", 1.0);
-	}
+	// 从参数服务器获取缩放因子
+	velocity_scaling_factor_ = 1.0;
+	acceleration_scaling_factor_ = 1.0;
 
-	// 读取全局默认值
-	velocity_scaling_factor_ = node_->get_parameter("velocity_scaling_factor").as_double();
-	acceleration_scaling_factor_ = node_->get_parameter("acceleration_scaling_factor").as_double();
-
-	// 如果指定了控制器类型，尝试读取专用参数
+	// 根据 controller_type 从参数服务器读取对应的参数
 	if (!controller_type_.empty()) {
-		std::string vel_param = controller_type_ + ".velocity_scaling_factor";
-		std::string acc_param = controller_type_ + ".acceleration_scaling_factor";
+		std::string velocity_param_name = controller_type_ + ".velocity_scaling_factor";
+		std::string acceleration_param_name = controller_type_ + ".acceleration_scaling_factor";
 
-		if (node_->has_parameter(vel_param)) {
-			velocity_scaling_factor_ = node_->get_parameter(vel_param).as_double();
+		RCLCPP_INFO(node_->get_logger(),
+		           "MoveItAdapter: Looking for parameters: '%s' and '%s'",
+		           velocity_param_name.c_str(), acceleration_param_name.c_str());
+
+		// 尝试从参数服务器获取参数
+		if (node_->has_parameter(velocity_param_name)) {
+			velocity_scaling_factor_ = node_->get_parameter(velocity_param_name).as_double();
 			RCLCPP_INFO(node_->get_logger(),
-						"Using controller-specific velocity scaling from '%s': %.2f",
-						vel_param.c_str(), velocity_scaling_factor_);
+			           "MoveItAdapter: Found '%s' = %.2f",
+			           velocity_param_name.c_str(), velocity_scaling_factor_);
+		} else {
+			RCLCPP_WARN(node_->get_logger(),
+			           "MoveItAdapter: Parameter '%s' not found, using default 1.0",
+			           velocity_param_name.c_str());
 		}
 
-		if (node_->has_parameter(acc_param)) {
-			acceleration_scaling_factor_ = node_->get_parameter(acc_param).as_double();
+		if (node_->has_parameter(acceleration_param_name)) {
+			acceleration_scaling_factor_ = node_->get_parameter(acceleration_param_name).as_double();
+			RCLCPP_INFO(node_->get_logger(),
+			           "MoveItAdapter: Found '%s' = %.2f",
+			           acceleration_param_name.c_str(), acceleration_scaling_factor_);
+		} else {
+			RCLCPP_WARN(node_->get_logger(),
+			           "MoveItAdapter: Parameter '%s' not found, using default 1.0",
+			           acceleration_param_name.c_str());
 		}
-	}
-
-	// 参数范围验证 [0.0, 1.0]
-	if (velocity_scaling_factor_ < 0.0 || velocity_scaling_factor_ > 1.0) {
-		RCLCPP_WARN(node_->get_logger(),
-					"velocity_scaling_factor (%.2f) out of range [0.0, 1.0], clamping",
-					velocity_scaling_factor_);
-		velocity_scaling_factor_ = std::clamp(velocity_scaling_factor_, 0.0, 1.0);
-	}
-
-	if (acceleration_scaling_factor_ < 0.0 || acceleration_scaling_factor_ > 1.0) {
-		RCLCPP_WARN(node_->get_logger(),
-					"acceleration_scaling_factor (%.2f) out of range [0.0, 1.0], clamping",
-					acceleration_scaling_factor_);
-		acceleration_scaling_factor_ = std::clamp(acceleration_scaling_factor_, 0.0, 1.0);
+	} else {
+		// 如果没有指定 controller_type，使用通用参数
+		if (node_->has_parameter("velocity_scaling_factor")) {
+			velocity_scaling_factor_ = node_->get_parameter("velocity_scaling_factor").as_double();
+		}
+		if (node_->has_parameter("acceleration_scaling_factor")) {
+			acceleration_scaling_factor_ = node_->get_parameter("acceleration_scaling_factor").as_double();
+		}
 	}
 
 	RCLCPP_INFO(node_->get_logger(),
-				"MoveIt scaling factors: velocity=%.2f, acceleration=%.2f",
-				velocity_scaling_factor_, acceleration_scaling_factor_);
+	           "MoveItAdapter: Final scaling factors - velocity=%.2f, acceleration=%.2f",
+	           velocity_scaling_factor_, acceleration_scaling_factor_);
+
+	applyScalingFactors();
 }
 
 void MoveItAdapter::applyScalingFactors() {
-	// 实时读取参数（支持运行时修改）
-	if (node_->has_parameter("velocity_scaling_factor")) {
-		velocity_scaling_factor_ = node_->get_parameter("velocity_scaling_factor").as_double();
-		velocity_scaling_factor_ = std::clamp(velocity_scaling_factor_, 0.0, 1.0);
+	// 应用缩放因子到 MoveIt 规划器
+	if (!move_group_) {
+		return;
 	}
 
-	if (node_->has_parameter("acceleration_scaling_factor")) {
-		acceleration_scaling_factor_ = node_->get_parameter("acceleration_scaling_factor").as_double();
-		acceleration_scaling_factor_ = std::clamp(acceleration_scaling_factor_, 0.0, 1.0);
-	}
+	// 钳制缩放因子在合理范围内
+	velocity_scaling_factor_ = std::max(0.01, std::min(1.0, velocity_scaling_factor_));
+	acceleration_scaling_factor_ = std::max(0.01, std::min(1.0, acceleration_scaling_factor_));
 
-	// 检查控制器专用参数（优先级更高）
-	if (!controller_type_.empty()) {
-		std::string vel_param = controller_type_ + ".velocity_scaling_factor";
-		if (node_->has_parameter(vel_param)) {
-			velocity_scaling_factor_ = node_->get_parameter(vel_param).as_double();
-			velocity_scaling_factor_ = std::clamp(velocity_scaling_factor_, 0.0, 1.0);
-		}
-
-		std::string acc_param = controller_type_ + ".acceleration_scaling_factor";
-		if (node_->has_parameter(acc_param)) {
-			acceleration_scaling_factor_ = node_->get_parameter(acc_param).as_double();
-			acceleration_scaling_factor_ = std::clamp(acceleration_scaling_factor_, 0.0, 1.0);
-		}
-	}
-
-	// 应用到 MoveGroupInterface
-	move_group_->setMaxVelocityScalingFactor(velocity_scaling_factor_);
 	move_group_->setMaxAccelerationScalingFactor(acceleration_scaling_factor_);
+	move_group_->setMaxVelocityScalingFactor(velocity_scaling_factor_);
 
 	RCLCPP_INFO(node_->get_logger(),
-				 "Applied MoveIt scaling factors - velocity: %.2f, acceleration: %.2f (controller_type: %s)",
-				 velocity_scaling_factor_, acceleration_scaling_factor_,
-				 controller_type_.empty() ? "none" : controller_type_.c_str());
+	           "MoveIt scaling factors applied: velocity=%.2f, acceleration=%.2f (type: %s)",
+	           velocity_scaling_factor_, acceleration_scaling_factor_,
+	           controller_type_.empty() ? "default" : controller_type_.c_str());
+}
+
+bool MoveItAdapter::planPoseGoalMultiAttempt(
+    const geometry_msgs::msg::Pose& target_pose,
+    moveit_msgs::msg::RobotTrajectory& trajectory,
+    int max_attempts) {
+	for (int attempt = 0; attempt < max_attempts; ++attempt) {
+		if (planPoseGoal(target_pose, trajectory)) {
+			return true;
+		}
+		RCLCPP_WARN(node_->get_logger(),
+		           "Pose planning attempt %d failed, retrying...", attempt + 1);
+	}
+	RCLCPP_ERROR(node_->get_logger(),
+	            "Pose planning failed after %d attempts", max_attempts);
+	return false;
+}
+
+bool MoveItAdapter::planCartesianPathMultiAttempt(
+    const std::vector<geometry_msgs::msg::Pose>& waypoints,
+    moveit_msgs::msg::RobotTrajectory& trajectory,
+    int max_attempts) {
+	for (int attempt = 0; attempt < max_attempts; ++attempt) {
+		if (planCartesianPath(waypoints, trajectory)) {
+			return true;
+		}
+		RCLCPP_WARN(node_->get_logger(),
+		           "Cartesian path planning attempt %d failed, retrying...", attempt + 1);
+	}
+	RCLCPP_ERROR(node_->get_logger(),
+	            "Cartesian path planning failed after %d attempts", max_attempts);
+	return false;
+}
+
+std::string MoveItAdapter::getEndEffectorLink() const {
+	if (!move_group_) {
+		return "";
+	}
+
+	return move_group_->getEndEffectorLink();
+}
+
+std::vector<double> MoveItAdapter::getCurrentJointState() const {
+	if (!move_group_) {
+		return {};
+	}
+
+	std::lock_guard<std::mutex> lock(joint_state_mutex_);
+	if (!latest_joint_state_) {
+		return {};
+	}
+
+	return latest_joint_state_->position;
+}
+
+std::string MoveItAdapter::getURDFString(const std::string& arm_type) const {
+	if (!node_) {
+		return "";
+	}
+
+	try {
+		// 优先尝试从参数服务器获取 URDF
+		std::string urdf_string;
+		if (node_->get_parameter("robot_description", urdf_string)) {
+			RCLCPP_DEBUG(node_->get_logger(), "Got URDF from robot_description parameter");
+			return urdf_string;
+		}
+
+		// 如果提供了机械臂类型，从指定的文件加载
+		if (arm_type.empty()) {
+			RCLCPP_ERROR(node_->get_logger(), "arm_type is empty and robot_description not in parameter server");
+			return "";
+		}
+
+		std::string package_path = ament_index_cpp::get_package_share_directory(
+		    "robot_description");
+		std::string urdf_path = package_path + "/urdf/" + arm_type + ".urdf";
+
+		std::ifstream file(urdf_path);
+		if (!file.is_open()) {
+			RCLCPP_ERROR(node_->get_logger(), "Failed to open URDF file: %s",
+			            urdf_path.c_str());
+			return "";
+		}
+
+		std::stringstream buffer;
+		buffer << file.rdbuf();
+		RCLCPP_INFO(node_->get_logger(),
+		           "Successfully loaded URDF from: %s", urdf_path.c_str());
+		return buffer.str();
+	} catch (const std::exception& e) {
+		RCLCPP_ERROR(node_->get_logger(), "Failed to get URDF string: %s", e.what());
+		return "";
+	}
+}
+
+moveit::core::RobotModelPtr MoveItAdapter::getRobotModel() const
+{
+	if (!move_group_) {
+		return nullptr;
+	}
+	// getRobotModel() returns RobotModelConstPtr, we need to cast it
+	// Since we're using it for reading only in TOTG, this is safe
+	auto const_model = move_group_->getRobotModel();
+	return std::const_pointer_cast<moveit::core::RobotModel>(const_model);
 }
 
 }  // namespace trajectory_planning::infrastructure::integration

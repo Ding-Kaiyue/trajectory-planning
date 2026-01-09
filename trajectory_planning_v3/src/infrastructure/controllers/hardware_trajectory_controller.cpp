@@ -206,19 +206,17 @@ void HardwareTrajectoryController::execute_trajectory(
 			//            ros_point.accelerations[5]);
 
 			// 转换ROS轨迹到domain格式
-			trajectory_planning::domain::entities::TrajectoryPoint domain_point{
-			    .position =
-			        trajectory_planning::domain::value_objects::JointPosition(
-			            positions_deg),
-			    .velocity =
-			        trajectory_planning::domain::value_objects::JointVelocity(
-			            {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}),
-			    .acceleration = trajectory_planning::domain::value_objects::
-			        JointAcceleration({0.0, 0.0, 0.0, 0.0, 0.0, 0.0}),
-			    .time_from_start =
-			        trajectory_planning::domain::value_objects::Duration(
-			            time_sec),
-			    .progress_ratio = static_cast<double>(i) / (point_num - 1)};
+			trajectory_planning::domain::entities::TrajectoryPoint domain_point;
+
+			// Convert std::vector<double> to value objects
+			domain_point.position = trajectory_planning::domain::value_objects::JointPosition(
+			    positions_deg);
+			domain_point.velocity = trajectory_planning::domain::value_objects::JointVelocity(
+			    std::vector<double>(6, 0.0));
+			domain_point.acceleration = trajectory_planning::domain::value_objects::JointAcceleration(
+			    std::vector<double>(6, 0.0));
+			domain_point.time_from_start = trajectory_planning::domain::value_objects::Duration(
+			    time_sec);
 
 			domain_trajectory.add_point(domain_point);
 		}

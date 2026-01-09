@@ -28,11 +28,10 @@ value_objects::Duration Trajectory::total_duration() const {
 
 void Trajectory::compute_progress_ratios() {
 	if (points_.empty()) return;
-	double total = total_duration().seconds();
-	if (total <= 0.0) return;
 
-	for (auto& p : points_) {
-		p.progress_ratio = p.time_from_start.seconds() / total;
+	size_t n = points_.size();
+	for (size_t i = 0; i < n; ++i) {
+		points_[i].progress_ratio = static_cast<double>(i) / (n - 1);
 	}
 }
 

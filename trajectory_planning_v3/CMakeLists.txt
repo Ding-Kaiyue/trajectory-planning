@@ -79,6 +79,7 @@ set(DOMAIN_ENTITY_SOURCES
 
 # Domain services sources
 set(DOMAIN_SERVICE_SOURCES
+  src/domain/services/time_optimal_trajectory_generation.cpp
   src/domain/services/trajectory_validation_service.cpp
   src/domain/services/collision_checker.cpp
   src/domain/services/trajectory_control_service.cpp

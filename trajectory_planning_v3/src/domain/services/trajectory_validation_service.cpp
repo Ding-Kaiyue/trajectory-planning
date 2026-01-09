@@ -13,9 +13,12 @@ bool TrajectoryValidationService::validate(const Trajectory& trajectory,
 	const auto& points = trajectory.points();
 	for (size_t i = 0; i < points.size(); ++i) {
 		const auto& pt = points[i];
-		if (!constraint.is_within_limits(pt.position.values(),
-		                                 pt.velocity.values(),
-		                                 pt.acceleration.values())) {
+		// Convert Eigen::VectorXd to std::vector<double>
+		std::vector<double> pos_vec(pt.position.values().data(), pt.position.values().data() + pt.position.size());
+		std::vector<double> vel_vec(pt.velocity.values().data(), pt.velocity.values().data() + pt.velocity.size());
+		std::vector<double> acc_vec(pt.acceleration.values().data(), pt.acceleration.values().data() + pt.acceleration.size());
+
+		if (!constraint.is_within_limits(pos_vec, vel_vec, acc_vec)) {
 			std::ostringstream oss;
 			oss << "Trajectory point " << i << " violates constraints.";
 			errors_.push_back(oss.str());
