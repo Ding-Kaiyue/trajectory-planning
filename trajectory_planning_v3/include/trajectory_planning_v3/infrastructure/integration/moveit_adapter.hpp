@@ -100,7 +100,10 @@ public:
 	// ===== 状态设置 =====
 	bool setStartState(const std::vector<double>& joint_values);
 	void resetStartStateToDefault();
-
+	
+	// 参数管理方法
+	void loadScalingParameters();
+	void applyScalingFactors();
 private:
 	rclcpp::Node::SharedPtr node_;
 	std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
@@ -119,10 +122,6 @@ private:
 	double velocity_scaling_factor_;
 	double acceleration_scaling_factor_;
 	std::string controller_type_;  // "movej", "movel", "movec" 或空字符串
-
-	// 参数管理方法
-	void loadScalingParameters();
-	void applyScalingFactors();
 
 	// 关节限位缓存（避免重复加载YAML文件）
 	mutable std::map<std::string, std::vector<std::pair<double, double>>> joint_limits_cache_;

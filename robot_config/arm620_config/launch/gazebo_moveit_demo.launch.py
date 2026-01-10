@@ -68,7 +68,6 @@ def my_generate_move_group_launch(ld, moveit_config):
     move_group_params = [
         moveit_config.to_dict(),
         move_group_configuration,
-        joint_limits,  # 添加joint_limits
     ]
     move_group_params.append({"use_sim_time": True})
 

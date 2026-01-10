@@ -200,6 +200,9 @@ MoveLPlanningStrategy::planWithJointConstraints(
 
     domain::entities::Trajectory traj;
 
+    // 重新加载缩放参数（支持动态参数更新）
+    moveit_->loadScalingParameters();
+
     const auto start_pose = moveit_->getCurrentPoseFromTF();
     const auto q0 = moveit_->getCurrentJointState();
     if (q0.empty())
@@ -239,7 +242,6 @@ MoveLPlanningStrategy::planWithJointConstraints(
         acceleration_scaling);
 
     auto sparse_traj = totg.compute(q_path);
-    // traj = totg.densifyTrajectoryByTime(sparse_traj, 0.010);  // 10ms
 
     if (sparse_traj.points().empty()) {
         RCLCPP_ERROR(rclcpp::get_logger("MoveL"),

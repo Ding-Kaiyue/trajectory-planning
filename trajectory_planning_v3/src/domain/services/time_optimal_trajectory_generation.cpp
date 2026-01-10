@@ -46,7 +46,7 @@ TimeOptimalTrajectoryParameterization::compute(
 
     robot_trajectory::RobotTrajectory rt(robot_model_, group_name_);
     moveit::core::RobotState state(robot_model_);
-
+    
     // -----------------------------
     // 1. 添加关键点
     // -----------------------------
@@ -67,11 +67,12 @@ TimeOptimalTrajectoryParameterization::compute(
 
     // -----------------------------
     // 2. TOTG 时间优化
+    // 直接使用 velocity_scaling 和 acceleration_scaling 作为缩放因子
+    // 缩放因子范围 0-1，表示使用多少百分比的最大速度/加速度
     // -----------------------------
-    trajectory_processing::TimeOptimalTrajectoryGeneration totg(
-        velocity_scaling_, acceleration_scaling_);
+    trajectory_processing::TimeOptimalTrajectoryGeneration totg;
 
-    if (!totg.computeTimeStamps(rt)) {
+    if (!totg.computeTimeStamps(rt, velocity_scaling_, acceleration_scaling_)) {
         RCLCPP_ERROR(rclcpp::get_logger("TOTG"),
                      "TimeOptimalTrajectoryGeneration failed");
         return traj;
