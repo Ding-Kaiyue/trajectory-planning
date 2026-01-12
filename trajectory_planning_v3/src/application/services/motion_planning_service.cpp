@@ -81,7 +81,7 @@ void MotionPlanningService::registerMoveCStrategy(
 }
 
 void MotionPlanningService::registerMoveCStrategy() {
-	movec_strategy_ = std::make_shared<MoveCPlanningStrategy>(*moveit_adapter_);
+	movec_strategy_ = std::make_shared<MoveCPlanningStrategy>(moveit_adapter_, tracik_adapter_);
 	RCLCPP_INFO(logger_, "MoveC strategy created and registered");
 }
 

@@ -16,7 +16,9 @@ class MoveLPlanningStrategy {
 public:
     MoveLPlanningStrategy(
         std::shared_ptr<integration::MoveItAdapter> moveit,
-        std::shared_ptr<integration::TracIKAdapter> tracik);
+        std::shared_ptr<integration::TracIKAdapter> tracik)
+		: moveit_(moveit),
+	      tracik_(tracik) {}
 
     /**
      * @brief 笛卡尔直线规划 - Joint Space 约束版本（使用 TimeOptimalTrajectoryGeneration）

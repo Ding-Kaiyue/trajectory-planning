@@ -5,9 +5,11 @@
 #include <string>
 #include <vector>
 
+#include <Eigen/Dense>
 #include "geometry_msgs/msg/pose.hpp"
 #include "trajectory_planning_v3/domain/entities/trajectory.hpp"
 #include "trajectory_planning_v3/infrastructure/integration/moveit_adapter.hpp"
+#include "trajectory_planning_v3/infrastructure/integration/tracik_adapter.hpp"
 
 namespace trajectory_planning::infrastructure::planning {
 
@@ -32,8 +34,11 @@ public:
 		CIRCLETHROUGH3POINTS,  // 通过三个点的圆轨迹
 	};
 
-	explicit MoveCPlanningStrategy(integration::MoveItAdapter& moveit_adapter)
-	    : moveit_adapter_(moveit_adapter) {}
+	MoveCPlanningStrategy(
+	    std::shared_ptr<integration::MoveItAdapter> moveit,
+	    std::shared_ptr<integration::TracIKAdapter> tracik)
+	    : moveit_(moveit),
+	      tracik_(tracik) {}
 
 	/**
 	 * @brief 规划经过中间点的圆弧轨迹
@@ -44,8 +49,8 @@ public:
 	 */
 	domain::entities::Trajectory planArc(
 	    const geometry_msgs::msg::Pose& start_pose,
-	    const geometry_msgs::msg::Pose& via_point,
-	    const geometry_msgs::msg::Pose& goal_pose);
+	    const geometry_msgs::msg::Pose& goal_pose,
+	    const geometry_msgs::msg::Pose& via_point);
 
 	/**
 	 * @brief 规划整圆轨迹 (CIRCLE模式: center为圆心, goal定义半径)
@@ -84,10 +89,48 @@ public:
 	    const geometry_msgs::msg::Pose& goal);
 
 private:
-	infrastructure::integration::MoveItAdapter& moveit_adapter_;
+	std::shared_ptr<integration::MoveItAdapter> moveit_;
+	std::shared_ptr<integration::TracIKAdapter> tracik_;
 
-	domain::entities::Trajectory convertTrajectoryType(
-	    const moveit_msgs::msg::RobotTrajectory& moveit_traj) const;
+	/**
+	 * @brief 圆弧路径笛卡尔采样（包含关节跳跃检测）
+	 * @param start_pose 起点位姿
+	 * @param via_point 中间点位姿
+	 * @param goal_pose 目标位姿
+	 * @param cartesian_step 笛卡尔采样步长
+	 * @return 关节空间路径
+	 */
+	std::vector<Eigen::VectorXd> sampleArcCartesianPath(
+	    const geometry_msgs::msg::Pose& start_pose,
+	    const geometry_msgs::msg::Pose& via_point,
+	    const geometry_msgs::msg::Pose& goal_pose,
+	    double cartesian_step = 0.02) const;
+
+	/**
+	 * @brief 贝塞尔曲线路径笛卡尔采样（包含关节跳跃检测）
+	 * @param start 起点位姿
+	 * @param ctrl1 控制点1位姿
+	 * @param ctrl2 控制点2位姿
+	 * @param goal 目标位姿
+	 * @param cartesian_step 笛卡尔采样步长
+	 * @return 关节空间路径
+	 */
+	std::vector<Eigen::VectorXd> sampleBezierCartesianPath(
+	    const geometry_msgs::msg::Pose& start,
+	    const geometry_msgs::msg::Pose& ctrl1,
+	    const geometry_msgs::msg::Pose& ctrl2,
+	    const geometry_msgs::msg::Pose& goal,
+	    double cartesian_step = 0.02) const;
+
+	/**
+	 * @brief 圆形路径笛卡尔采样（包含关节跳跃检测）
+	 * @param waypoints 圆形路径上的笛卡尔路径点
+	 * @param cartesian_step 笛卡尔采样步长
+	 * @return 关节空间路径
+	 */
+	std::vector<Eigen::VectorXd> sampleCircleCartesianPath(
+	    const std::vector<geometry_msgs::msg::Pose>& waypoints,
+	    double cartesian_step = 0.02) const;
 
 	/**
 	 * @brief 根据路径长度动态计算采样点数
@@ -98,6 +141,108 @@ private:
 	 */
 	int calculateNumPoints(double path_length, int min_points = 10,
 	                        double sampling_interval = 0.01) const;
+						
+	/**
+	 * @brief 调试用：打印轨迹详细位置信息
+	 * @param traj 轨迹对象
+	 */
+	static void printTrajectoryPositions(const domain::entities::Trajectory& traj) {
+		std::cout << "\n========== Position (rad) ==========\n";
+		std::cout << std::setw(6) << "Pt" << std::setw(10) << "Time(s)" << std::setw(12) << "Progress(%)";
+		if (!traj.points().empty()) {
+			for (size_t j = 0; j < traj.points()[0].position.values().size(); ++j) {
+				std::cout << std::setw(12) << ("J" + std::to_string(j));
+			}
+		}
+		std::cout << "\n" << std::string(120, '-') << "\n";
+
+		for (size_t i = 0; i < traj.points().size(); ++i) {
+			const auto& pt = traj.points()[i];
+			const auto& pos = pt.position.values();
+			std::cout << std::setw(6) << i
+					<< std::setw(10) << std::fixed << std::setprecision(3) << pt.time_from_start.seconds()
+					<< std::setw(12) << std::fixed << std::setprecision(1) << (pt.progress_ratio * 100.0);
+			for (double p : pos) {
+				std::cout << std::setw(12) << std::fixed << std::setprecision(5) << p;
+			}
+			std::cout << "\n";
+		}
+	}
+
+	/**
+	 * @brief 调试用：打印轨迹详细速度信息
+	 * @param traj 轨迹对象
+	 */
+	static void printTrajectoryVelocities(const domain::entities::Trajectory& traj) {
+		std::cout << "\n========== Velocity (rad/s) ==========\n";
+		std::cout << std::setw(6) << "Pt" << std::setw(10) << "Time(s)" << std::setw(12) << "Progress(%)";
+		if (!traj.points().empty()) {
+			for (size_t j = 0; j < traj.points()[0].velocity.values().size(); ++j) {
+				std::cout << std::setw(12) << ("J" + std::to_string(j));
+			}
+		}
+		std::cout << "\n" << std::string(120, '-') << "\n";
+
+		for (size_t i = 0; i < traj.points().size(); ++i) {
+			const auto& pt = traj.points()[i];
+			const auto& vel = pt.velocity.values();
+			std::cout << std::setw(6) << i
+					<< std::setw(10) << std::fixed << std::setprecision(3) << pt.time_from_start.seconds()
+					<< std::setw(12) << std::fixed << std::setprecision(1) << (pt.progress_ratio * 100.0);
+			for (double v : vel) {
+				std::cout << std::setw(12) << std::fixed << std::setprecision(5) << v;
+			}
+			std::cout << "\n";
+		}
+	}
+
+	/**
+	 * @brief 调试用：打印轨迹详细加速度信息
+	 * @param traj 轨迹对象
+	 */
+	static void printTrajectoryAccelerations(const domain::entities::Trajectory& traj) {
+		std::cout << "\n========== Acceleration (rad/s²) ==========\n";
+		std::cout << std::setw(6) << "Pt" << std::setw(10) << "Time(s)" << std::setw(12) << "Progress(%)";
+		if (!traj.points().empty()) {
+			for (size_t j = 0; j < traj.points()[0].acceleration.values().size(); ++j) {
+				std::cout << std::setw(12) << ("J" + std::to_string(j));
+			}
+		}
+		std::cout << "\n" << std::string(120, '-') << "\n";
+
+		for (size_t i = 0; i < traj.points().size(); ++i) {
+			const auto& pt = traj.points()[i];
+			const auto& acc = pt.acceleration.values();
+			std::cout << std::setw(6) << i
+					<< std::setw(10) << std::fixed << std::setprecision(3) << pt.time_from_start.seconds()
+					<< std::setw(12) << std::fixed << std::setprecision(1) << (pt.progress_ratio * 100.0);
+			for (double a : acc) {
+				std::cout << std::setw(12) << std::fixed << std::setprecision(5) << a;
+			}
+			std::cout << "\n";
+		}
+	}
+	
+	/**
+	 * @brief 调试用：打印轨迹完整摘要信息
+	 * @param traj 轨迹对象
+	 */
+	static void printTrajectory(const domain::entities::Trajectory& traj) {
+		std::cout << "\n========== MoveL Trajectory Summary ==========\n";
+		std::cout << "Total points: " << traj.points().size() << "\n";
+
+		if (!traj.points().empty()) {
+			std::cout << "Duration: " << std::fixed << std::setprecision(3)
+					<< traj.points().back().time_from_start.seconds() << " s\n";
+		}
+
+		printTrajectoryPositions(traj);
+		printTrajectoryVelocities(traj);
+		printTrajectoryAccelerations(traj);
+
+		std::cout << "========== End of Trajectory ==========\n\n";
+		std::cout.flush();
+	}
 };
 
 }  // namespace trajectory_planning::infrastructure::planning

@@ -42,15 +42,6 @@ inline double wrapToNearest(double q, double q_ref)
 }
 
 
-
-MoveLPlanningStrategy::MoveLPlanningStrategy(
-    std::shared_ptr<integration::MoveItAdapter> moveit,
-    std::shared_ptr<integration::TracIKAdapter> tracik)
-    : moveit_(moveit),
-      tracik_(tracik)
-{
-}
-
 std::vector<Eigen::VectorXd>
 MoveLPlanningStrategy::sampleCartesianPath(
     const geometry_msgs::msg::Pose& start_pose,
@@ -215,7 +206,7 @@ MoveLPlanningStrategy::planWithJointConstraints(
         sampleCartesianPath(start_pose, goal, eef_step);
 
     if (q_path.size() < 2) {
-        RCLCPP_WARN(rclcpp::get_logger("MoveL"),
+        RCLCPP_WARN(rclcpp::get_logger("MoveLPlanningStrategy"),
                     "Insufficient joint samples");
         return traj;
     }
@@ -241,17 +232,17 @@ MoveLPlanningStrategy::planWithJointConstraints(
         velocity_scaling,
         acceleration_scaling);
 
-    auto sparse_traj = totg.compute(q_path);
+    traj = totg.compute(q_path);
 
-    if (sparse_traj.points().empty()) {
-        RCLCPP_ERROR(rclcpp::get_logger("MoveL"),
+    if (traj.points().empty()) {
+        RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
                     "TOTG failed");
         return traj;
     }
 
-    // printTrajectory(sparse_traj);
+    // printTrajectory(traj);
 
-    return sparse_traj;
+    return traj;
 }
 
 
