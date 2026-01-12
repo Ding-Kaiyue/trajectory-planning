@@ -18,6 +18,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(kdl_parser REQUIRED)
+find_package(NLopt REQUIRED)
 
 # include directories
 include_directories(
@@ -47,10 +48,11 @@ ament_target_dependencies(trac_ik_plugin
   trac_ik_lib
   orocos_kdl
   kdl_parser
+  NLopt
 )
 
 # link libraries
-target_link_libraries(trac_ik_plugin ${orocos_kdl_LIBRARIES})
+target_link_libraries(trac_ik_plugin ${orocos_kdl_LIBRARIES} NLopt::nlopt)
 
 # install
 install(
