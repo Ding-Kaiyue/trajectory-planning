@@ -6,6 +6,25 @@ if(POLICY CMP0077)
   cmake_policy(SET CMP0077 NEW)
 endif()
 
+# Build options
+option(CMAKE_INTERPROCEDURAL_OPTIMIZATION "Enable LTO for optimization" OFF)
+
+# Memory-efficient linker settings for low-memory systems
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-keep-memory")
+set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-keep-memory")
+
+# Use lld linker if available (reduces link-time memory by 30-50%)
+find_program(LLD_LINKER ld.lld)
+if(LLD_LINKER)
+  message(STATUS "Found lld linker: ${LLD_LINKER}")
+  set(CMAKE_LINKER ${LLD_LINKER})
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
+else()
+  message(STATUS "lld linker not found, using system default")
+  message(STATUS "To install lld: sudo apt install lld")
+endif()
+
 # 默认禁用测试
 if(NOT DEFINED BUILD_TESTING)
   set(BUILD_TESTING OFF)
@@ -70,69 +89,34 @@ endif()
 # Include directories
 include_directories(include)
 
-# Domain entities sources
-set(DOMAIN_ENTITY_SOURCES
-  src/domain/entities/robot_state.cpp
-  src/domain/entities/trajectory.cpp
-  src/domain/entities/constraint.cpp
+# ===============================
+# Main library with all sources
+# ===============================
+
+# Collect all source files
+file(GLOB_RECURSE DOMAIN_SOURCES
+  src/domain/entities/*.cpp
+  src/domain/services/*.cpp
 )
 
-# Domain services sources
-set(DOMAIN_SERVICE_SOURCES
-  src/domain/services/time_optimal_trajectory_generation.cpp
-  src/domain/services/trajectory_validation_service.cpp
-  src/domain/services/collision_checker.cpp
-  src/domain/services/trajectory_control_service.cpp
-  src/domain/services/kinematics_service.cpp
+file(GLOB_RECURSE APPLICATION_SOURCES
+  src/application/orchestrators/*.cpp
+  src/application/use_cases/*.cpp
+  src/application/services/*.cpp
 )
 
-# Application orchestrators sources
-set(APPLICATION_ORCHESTRATOR_SOURCES
-  src/application/orchestrators/safety_orchestrator.cpp
-  src/application/orchestrators/single_arm_orchestrator.cpp
-  src/application/orchestrators/dual_arm_orchestrator.cpp
+file(GLOB_RECURSE INFRASTRUCTURE_SOURCES
+  src/infrastructure/integration/*.cpp
+  src/infrastructure/planning/strategies/*.cpp
+  src/infrastructure/execution/*.cpp
+  src/infrastructure/adapters/*.cpp
+  src/infrastructure/controllers/*.cpp
 )
 
-# Application use cases sources
-set(APPLICATION_USE_CASE_SOURCES
-  src/application/use_cases/safety_motion_planning.cpp
-  src/application/use_cases/plan_linear_motion.cpp
-  src/application/use_cases/plan_joint_motion.cpp
-  src/application/use_cases/plan_arc_motion.cpp
-)
-
-# Application services sources
-set(APPLICATION_SERVICE_SOURCES
-  src/application/services/robot_control_service.cpp
-  src/application/services/motion_planning_service.cpp
-)
-
-# Infrastructure sources
-set(INFRASTRUCTURE_SOURCES
-  src/infrastructure/integration/moveit_adapter.cpp
-  src/infrastructure/integration/tracik_adapter.cpp
-  src/infrastructure/integration/ros2_bridge.cpp
-  src/infrastructure/planning/strategies/position_planning_strategy.cpp
-  src/infrastructure/planning/strategies/orientation_planning_strategy.cpp
-  src/infrastructure/planning/strategies/movel_planning_strategy.cpp
-  src/infrastructure/planning/strategies/movej_planning_strategy.cpp
-  src/infrastructure/planning/strategies/movec_planning_strategy.cpp
-  src/infrastructure/planning/strategies/joint_constrained_planning_strategy.cpp
-  src/infrastructure/execution/trajectory_executor.cpp
-  src/infrastructure/adapters/ros_message_adapter.cpp
-  src/infrastructure/adapters/moveit_message_adapter.cpp
-  src/infrastructure/adapters/hardware_adapter.cpp
-  src/infrastructure/adapters/perception_adapter.cpp
-  src/infrastructure/controllers/hardware_trajectory_controller.cpp
-)
-
-# Create main library
-add_library(${PROJECT_NAME}
-  ${DOMAIN_ENTITY_SOURCES}
-  ${DOMAIN_SERVICE_SOURCES}
-  ${APPLICATION_ORCHESTRATOR_SOURCES}
-  ${APPLICATION_USE_CASE_SOURCES}
-  ${APPLICATION_SERVICE_SOURCES}
+# Create main shared library from all sources
+add_library(${PROJECT_NAME} SHARED
+  ${DOMAIN_SOURCES}
+  ${APPLICATION_SOURCES}
   ${INFRASTRUCTURE_SOURCES}
 )
 
@@ -142,7 +126,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-# Link external libraries
+# Link external libraries to final target
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   geometry_msgs
@@ -161,16 +145,16 @@ ament_target_dependencies(${PROJECT_NAME}
   hardware_driver
 )
 
+# Explicit linking for final library
+target_link_libraries(${PROJECT_NAME}
+  yaml-cpp
+  hardware_driver::hardware_driver_canfd
+)
+
 # Add TRAC-IK dependency if available
 if(TRAC_IK_AVAILABLE)
   target_link_libraries(${PROJECT_NAME} trac_ik_lib::trac_ik_lib)
 endif()
-
-# 显式链接hardware_driver库到主库
-target_link_libraries(${PROJECT_NAME} 
-  yaml-cpp 
-  hardware_driver::hardware_driver_canfd
-)
 
 
 # Node executables (只保留硬件相关的节点)
@@ -227,7 +211,7 @@ install(DIRECTORY include/
 )
 
 # Install launch and config files
-install(DIRECTORY 
+install(DIRECTORY
   launch
   config
   DESTINATION share/${PROJECT_NAME}/
