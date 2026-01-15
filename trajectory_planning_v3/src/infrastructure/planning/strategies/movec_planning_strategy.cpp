@@ -39,12 +39,34 @@ static geometry_msgs::msg::Quaternion slerp(
 }
 
 // 辅助函数：关节角度包装到最近值
-inline double wrapToNearest(double q, double q_ref)
+inline double wrapToNearest(double q, double q_ref, double q_min, double q_max)
 {
     double dq = q - q_ref;
     while (dq > M_PI)  dq -= 2.0 * M_PI;
     while (dq < -M_PI) dq += 2.0 * M_PI;
-    return q_ref + dq;
+    double wrapped = q_ref + dq;
+
+    // 检查是否在限位范围内
+    if (wrapped >= q_min && wrapped <= q_max) {
+        return wrapped;
+    }
+
+    // 尝试其他 2π 倍数偏移
+    for (int k = 1; k <= 3; ++k) {
+        double offset = 2.0 * M_PI * k;
+        double q_plus = wrapped + offset;
+        double q_minus = wrapped - offset;
+
+        if (q_plus >= q_min && q_plus <= q_max) {
+            return q_plus;
+        }
+        if (q_minus >= q_min && q_minus <= q_max) {
+            return q_minus;
+        }
+    }
+
+    // 无法找到有效解，返回 NaN
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
 domain::entities::Trajectory MoveCPlanningStrategy::planArc(
@@ -78,7 +100,7 @@ domain::entities::Trajectory MoveCPlanningStrategy::planArc(
 	auto robot_model = moveit_->getRobotModel();
 	if (!robot_model) 
 		return traj;
-
+    
 	/* -----------------------------
     * 3. Time-optimal parameterization
     * ----------------------------- */
@@ -327,6 +349,13 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
 
         q_path.reserve(steps + 1);
         q_path.push_back(q_prev);
+        
+        auto joint_limits = moveit_->getJointLimits();
+        if (joint_limits.empty()) {
+            RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
+                        "Failed to get joint limits");
+            return q_path;
+        }
 
         // ABB / KUKA 阈值
         const double SOFT_JUMP = 0.35;   // rad  → SingArea
@@ -355,9 +384,25 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
 
             Eigen::VectorXd q(q_raw.size());
 
-            // 关节包装（ABB风格）
-            for (int j = 0; j < q.size(); ++j)
-                q[j] = wrapToNearest(q_raw[j], q_prev[j]);
+            bool valid_solution = true;
+            for (int j = 0; j < q.size(); ++j) {
+                double q_wrapped = wrapToNearest(q_raw[j], q_prev[j],
+                                                joint_limits[j].first,
+                                                joint_limits[j].second);
+                if (std::isnan(q_wrapped)) {
+                    RCLCPP_WARN(
+                        rclcpp::get_logger("MoveLPlanningStrategy"),
+                        "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at s=%.3f, abort",
+                        j, q_raw[j], joint_limits[j].first, joint_limits[j].second, s);
+                    valid_solution = false;
+                    break;
+                }
+                q[j] = q_wrapped;
+            }
+
+            if (!valid_solution) {
+                return std::vector<Eigen::VectorXd>{};
+            }
 
             // 软/硬关节跳跃评估
             for (int j = 0; j < q.size(); ++j) {
@@ -401,7 +446,9 @@ EXIT_LINEAR_FALLBACK:
             if (tracik_->computeIKClosest(goal_pose, seed, q_goal, 10)) {  // 增加到10次重试
                 Eigen::VectorXd qg(q_goal.size());
                 for (size_t j = 0; j < q_goal.size(); ++j)
-                    qg[j] = wrapToNearest(q_goal[j], q_prev[j]);
+                    qg[j] = wrapToNearest(q_goal[j], q_prev[j],
+                                         joint_limits[j].first,
+                                         joint_limits[j].second);
 
                 q_path.back() = qg;
             }
@@ -465,11 +512,21 @@ EXIT_LINEAR_FALLBACK:
     Eigen::VectorXd q_prev = Eigen::Map<const Eigen::VectorXd>(
         moveit_->getCurrentJointState().data(),
         moveit_->getCurrentJointState().size());
-
+    
     q_path.reserve(steps + 1);
 
     // 将起始关节配置加入路径
     q_path.push_back(q_prev);
+    
+    /* ============================================================
+     * 2.5. Get joint limits
+     * ============================================================ */
+    auto joint_limits = moveit_->getJointLimits();
+    if (joint_limits.empty()) {
+        RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
+                     "Failed to get joint limits");
+        return q_path;
+    }
 
     /* ============================================================
      * 3. ABB / KUKA 阈值
@@ -517,22 +574,36 @@ EXIT_LINEAR_FALLBACK:
         std::vector<double> q_raw;
 
         if (!tracik_->computeIKClosest(pose, seed, q_raw)) {
-            failed_count++;
-            RCLCPP_WARN(rclcpp::get_logger("MoveCPlanningStrategy"),
-                        "⚠️ IK failed for cartesian pose %zu/%zu (progress: %.1f%%)",
+            RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
+                        "❌ IK failed for cartesian pose %zu/%zu (progress: %.1f%%) - aborting arc planning",
                         i, cartesian_poses.size(), (100.0 * i / cartesian_poses.size()));
-            // IK失败，中止规划
-            ik_failure = true;
-            break;
+            return std::vector<Eigen::VectorXd>{};
         }
 
         Eigen::VectorXd q(q_raw.size());
 
         /* ========================================================
-         * 5. 关节包装（ABB风格）
+         * 5. 关节包装（ABB风格）with limit checking
          * ======================================================== */
-        for (int j = 0; j < q.size(); ++j)
-            q[j] = wrapToNearest(q_raw[j], q_prev[j]);
+        bool valid_solution = true;
+        for (int j = 0; j < q.size(); ++j) {
+            double q_wrapped = wrapToNearest(q_raw[j], q_prev[j],
+                                            joint_limits[j].first,
+                                            joint_limits[j].second);
+            if (std::isnan(q_wrapped)) {
+                RCLCPP_WARN(
+                    rclcpp::get_logger("MoveCPlanningStrategy"),
+                    "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at t=%.3f, abort",
+                    j, q_raw[j], joint_limits[j].first, joint_limits[j].second, t);
+                valid_solution = false;
+                break;
+            }
+            q[j] = q_wrapped;
+        }
+
+        if (!valid_solution) {
+            goto EXIT_ARC_SAMPLING;
+        }
 
         /* ========================================================
          * 6. 软/硬关节跳跃评估
@@ -581,10 +652,25 @@ EXIT_ARC_SAMPLING:
 
         if (tracik_->computeIKClosest(goal_pose, seed, q_goal)) {
             Eigen::VectorXd qg(q_goal.size());
-            for (size_t j = 0; j < q_goal.size(); ++j)
-                qg[j] = wrapToNearest(q_goal[j], q_prev[j]);
+            bool valid_goal = true;
+            for (size_t j = 0; j < q_goal.size(); ++j) {
+                double q_wrapped = wrapToNearest(q_goal[j], q_prev[j],
+                                                joint_limits[j].first,
+                                                joint_limits[j].second);
+                if (std::isnan(q_wrapped)) {
+                    RCLCPP_WARN(
+                        rclcpp::get_logger("MoveCPlanningStrategy"),
+                        "Goal IK solution joint %d %.3f rad exceeds limits [%.3f, %.3f]",
+                        j, q_goal[j], joint_limits[j].first, joint_limits[j].second);
+                    valid_goal = false;
+                    break;
+                }
+                qg[j] = q_wrapped;
+            }
 
-            q_path.back() = qg;
+            if (valid_goal) {
+                q_path.back() = qg;
+            }
         }
     }
 
@@ -649,6 +735,16 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
     q_path.push_back(q_prev);
 
     /* ============================================================
+     * 2.5. Get joint limits
+     * ============================================================ */
+    auto joint_limits = moveit_->getJointLimits();
+    if (joint_limits.empty()) {
+        RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
+                     "Failed to get joint limits");
+        return q_path;
+    }
+
+    /* ============================================================
      * 3. ABB / KUKA 阈值
      * ============================================================ */
     const double SOFT_JUMP = 0.35;   // rad  → SingArea
@@ -687,18 +783,34 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
 
         if (!tracik_->computeIKClosest(pose, seed, q_raw, 10)) {  // 增加到10次重试
             RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                        "❎ IK failed at t=%.3f - aborting bezier planning", t);
-            ik_failure = true;
-            break;
+                        "❌ IK failed at t=%.3f (already retried 10 times internally) - aborting bezier planning", t);
+            return std::vector<Eigen::VectorXd>{};
         }
 
         Eigen::VectorXd q(q_raw.size());
 
         /* ========================================================
-         * 5. 关节包装（ABB风格）
+         * 5. 关节包装（ABB风格）with limit checking
          * ======================================================== */
-        for (int j = 0; j < q.size(); ++j)
-            q[j] = wrapToNearest(q_raw[j], q_prev[j]);
+        bool valid_solution = true;
+        for (int j = 0; j < q.size(); ++j) {
+            double q_wrapped = wrapToNearest(q_raw[j], q_prev[j],
+                                            joint_limits[j].first,
+                                            joint_limits[j].second);
+            if (std::isnan(q_wrapped)) {
+                RCLCPP_WARN(
+                    rclcpp::get_logger("MoveCPlanningStrategy"),
+                    "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at t=%.3f, abort",
+                    j, q_raw[j], joint_limits[j].first, joint_limits[j].second, t);
+                valid_solution = false;
+                break;
+            }
+            q[j] = q_wrapped;
+        }
+
+        if (!valid_solution) {
+            goto EXIT_BEZIER_SAMPLING;
+        }
 
         /* ========================================================
          * 6. 软/硬关节跳跃评估
@@ -747,10 +859,25 @@ EXIT_BEZIER_SAMPLING:
 
         if (tracik_->computeIKClosest(goal, seed, q_goal)) {
             Eigen::VectorXd qg(q_goal.size());
-            for (size_t j = 0; j < q_goal.size(); ++j)
-                qg[j] = wrapToNearest(q_goal[j], q_prev[j]);
+            bool valid_goal = true;
+            for (size_t j = 0; j < q_goal.size(); ++j) {
+                double q_wrapped = wrapToNearest(q_goal[j], q_prev[j],
+                                                joint_limits[j].first,
+                                                joint_limits[j].second);
+                if (std::isnan(q_wrapped)) {
+                    RCLCPP_WARN(
+                        rclcpp::get_logger("MoveCPlanningStrategy"),
+                        "Goal IK solution joint %d %.3f rad exceeds limits [%.3f, %.3f]",
+                        j, q_goal[j], joint_limits[j].first, joint_limits[j].second);
+                    valid_goal = false;
+                    break;
+                }
+                qg[j] = q_wrapped;
+            }
 
-            q_path.back() = qg;
+            if (valid_goal) {
+                q_path.back() = qg;
+            }
         }
     }
 
@@ -814,6 +941,16 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
     q_path.reserve(total_steps + 1);
 
     /* ============================================================
+     * 2.5. Get joint limits
+     * ============================================================ */
+    auto joint_limits = moveit_->getJointLimits();
+    if (joint_limits.empty()) {
+        RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
+                     "Failed to get joint limits");
+        return q_path;
+    }
+
+    /* ============================================================
      * 3. ABB / KUKA 阈值
      * ============================================================ */
     const double SOFT_JUMP = 0.35;   // rad  → SingArea
@@ -859,18 +996,34 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
 
             if (!tracik_->computeIKClosest(pose, seed, q_raw, 10)) {  // 增加到10次重试
                 RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                            "❎ IK failed at segment %zu, t=%.3f - aborting circle planning", seg, t);
-                ik_failure = true;
-                goto EXIT_CIRCLE_SAMPLING;
+                            "❌ IK failed at segment %zu, t=%.3f (already retried 10 times internally) - aborting circle planning", seg, t);
+                return std::vector<Eigen::VectorXd>{};
             }
 
             Eigen::VectorXd q(q_raw.size());
 
             /* ========================================================
-             * 5. 关节包装（ABB风格）
+             * 5. 关节包装（ABB风格）with limit checking
              * ======================================================== */
-            for (int j = 0; j < q.size(); ++j)
-                q[j] = wrapToNearest(q_raw[j], q_prev[j]);
+            bool valid_solution = true;
+            for (int j = 0; j < q.size(); ++j) {
+                double q_wrapped = wrapToNearest(q_raw[j], q_prev[j],
+                                                joint_limits[j].first,
+                                                joint_limits[j].second);
+                if (std::isnan(q_wrapped)) {
+                    RCLCPP_WARN(
+                        rclcpp::get_logger("MoveCPlanningStrategy"),
+                        "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at seg %zu t=%.3f, abort",
+                        j, q_raw[j], joint_limits[j].first, joint_limits[j].second, seg, t);
+                    valid_solution = false;
+                    break;
+                }
+                q[j] = q_wrapped;
+            }
+
+            if (!valid_solution) {
+                goto EXIT_CIRCLE_SAMPLING;
+            }
 
             /* ========================================================
              * 6. 软/硬关节跳跃评估
@@ -922,10 +1075,25 @@ EXIT_CIRCLE_SAMPLING:
 
         if (tracik_->computeIKClosest(final_pose, seed, q_goal, 10)) {  // 增加到10次重试
             Eigen::VectorXd qg(q_goal.size());
-            for (size_t j = 0; j < q_goal.size(); ++j)
-                qg[j] = wrapToNearest(q_goal[j], q_prev[j]);
+            bool valid_goal = true;
+            for (size_t j = 0; j < q_goal.size(); ++j) {
+                double q_wrapped = wrapToNearest(q_goal[j], q_prev[j],
+                                                joint_limits[j].first,
+                                                joint_limits[j].second);
+                if (std::isnan(q_wrapped)) {
+                    RCLCPP_WARN(
+                        rclcpp::get_logger("MoveCPlanningStrategy"),
+                        "Goal IK solution joint %d %.3f rad exceeds limits [%.3f, %.3f]",
+                        j, q_goal[j], joint_limits[j].first, joint_limits[j].second);
+                    valid_goal = false;
+                    break;
+                }
+                qg[j] = q_wrapped;
+            }
 
-            q_path.back() = qg;
+            if (valid_goal) {
+                q_path.back() = qg;
+            }
         }
     }
 
