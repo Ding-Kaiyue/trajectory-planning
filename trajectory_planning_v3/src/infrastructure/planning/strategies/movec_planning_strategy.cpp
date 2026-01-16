@@ -361,10 +361,10 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
         const double SOFT_JUMP = 0.35;   // rad  → SingArea
         const double HARD_JUMP = 1.20;   // rad  → topology break
         bool in_sing_area = false;
-        bool ik_failure = false;
+        bool sampling_failed = false;
 
         // 使用直线插值（包含关节跳跃检测）
-        for (size_t i = 1; i <= steps; ++i) {
+        for (size_t i = 1; i <= steps && !sampling_failed; ++i) {
             double s = std::min(1.0, double(i) / steps);
             geometry_msgs::msg::Pose pose;
             pose.position.x = p0.x() + s * dp.x();
@@ -378,7 +378,7 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
             if (!tracik_->computeIKClosest(pose, seed, q_raw, 10)) {  // 增加到10次重试
                 RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
                             "❎ IK failed at linear fallback s=%.3f - aborting", s);
-                ik_failure = true;
+                sampling_failed = true;
                 break;
             }
 
@@ -401,7 +401,8 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
             }
 
             if (!valid_solution) {
-                return std::vector<Eigen::VectorXd>{};
+                sampling_failed = true;
+                break;
             }
 
             // 软/硬关节跳跃评估
@@ -413,7 +414,8 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
                         rclcpp::get_logger("MoveCPlanningStrategy"),
                         "Hard joint jump %.3f rad at joint %d (linear fallback s=%.3f), abort",
                         dq, j, s);
-                    goto EXIT_LINEAR_FALLBACK;
+                    sampling_failed = true;
+                    break;
                 }
 
                 if (dq > SOFT_JUMP && !in_sing_area) {
@@ -425,16 +427,19 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
                 }
             }
 
+            if (sampling_failed)
+                break;
+
             q_path.push_back(q);
             q_prev = q;
         }
 
-EXIT_LINEAR_FALLBACK:
-
-        // 如果IK失败，立即返回空轨迹
-        if (ik_failure) {
+        /* ============================================================
+         * Linear fallback error check
+         * ============================================================ */
+        if (sampling_failed) {
             RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                        "❎ Linear fallback aborted due to IK failure - returning empty trajectory");
+                        "❎ Linear fallback aborted - returning empty trajectory");
             return std::vector<Eigen::VectorXd>{};
         }
 
@@ -564,9 +569,9 @@ EXIT_LINEAR_FALLBACK:
     /* ============================================================
      * 5. 第二阶段：对笛卡尔点进行IK求解
      * ============================================================ */
-    bool ik_failure = false;
+    bool sampling_failed = false;
     int failed_count = 0;
-    for (size_t i = 0; i < cartesian_poses.size(); ++i) {
+    for (size_t i = 0; i < cartesian_poses.size() && !sampling_failed; ++i) {
         const auto& pose = cartesian_poses[i];
         double t = (i == 0) ? 0.0 : static_cast<double>(i - 1) / steps;
 
@@ -602,7 +607,8 @@ EXIT_LINEAR_FALLBACK:
         }
 
         if (!valid_solution) {
-            goto EXIT_ARC_SAMPLING;
+            sampling_failed = true;
+            break;
         }
 
         /* ========================================================
@@ -616,7 +622,8 @@ EXIT_LINEAR_FALLBACK:
                     rclcpp::get_logger("MoveCPlanningStrategy"),
                     "Hard joint jump %.3f rad at joint %d (t=%.3f), abort",
                     dq, j, t);
-                goto EXIT_ARC_SAMPLING;
+                sampling_failed = true;
+                break;
             }
 
             if (dq > SOFT_JUMP && !in_sing_area) {
@@ -632,12 +639,12 @@ EXIT_LINEAR_FALLBACK:
         q_prev = q;
     }
 
-EXIT_ARC_SAMPLING:
-
-    // 如果IK失败，立即返回空轨迹
-    if (ik_failure) {
+    /* ============================================================
+     * Arc sampling error check
+     * ============================================================ */
+    if (sampling_failed) {
         RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "❎ Arc planning aborted due to IK failure - returning empty trajectory");
+                    "❎ Arc planning aborted due to sampling failure - returning empty trajectory");
         return std::vector<Eigen::VectorXd>{};
     }
 
@@ -754,8 +761,8 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
     /* ============================================================
      * 4. 贝塞尔曲线采样 + IK
      * ============================================================ */
-    bool ik_failure = false;
-    for (size_t i = 1; i <= steps; ++i) {
+    bool sampling_failed = false;
+    for (size_t i = 1; i <= steps && !sampling_failed; ++i) {
         double t = std::min(1.0, double(i) / steps);
         double t2 = t * t, t3 = t2 * t;
 
@@ -809,7 +816,8 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
         }
 
         if (!valid_solution) {
-            goto EXIT_BEZIER_SAMPLING;
+            sampling_failed = true;
+            break;
         }
 
         /* ========================================================
@@ -823,7 +831,8 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
                     rclcpp::get_logger("MoveCPlanningStrategy"),
                     "Hard joint jump %.3f rad at joint %d (t=%.3f), abort",
                     dq, j, t);
-                goto EXIT_BEZIER_SAMPLING;
+                sampling_failed = true;
+                break;
             }
 
             if (dq > SOFT_JUMP && !in_sing_area) {
@@ -839,12 +848,12 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
         q_prev = q;
     }
 
-EXIT_BEZIER_SAMPLING:
-
-    // 如果IK失败，立即返回空轨迹
-    if (ik_failure) {
+    /* ============================================================
+     * Bezier sampling error check
+     * ============================================================ */
+    if (sampling_failed) {
         RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "❎ Bezier planning aborted due to IK failure - returning empty trajectory");
+                    "❎ Bezier planning aborted due to sampling failure - returning empty trajectory");
         return std::vector<Eigen::VectorXd>{};
     }
 
@@ -963,9 +972,9 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
     /* ============================================================
      * 4. 圆形路径采样 + IK
      * ============================================================ */
-    bool ik_failure = false;
+    bool sampling_failed = false;
     size_t current_step = 0;
-    for (size_t seg = 0; seg < waypoints.size() - 1; ++seg) {
+    for (size_t seg = 0; seg < waypoints.size() - 1 && !sampling_failed; ++seg) {
         const auto& start_pose = waypoints[seg];
         const auto& end_pose = waypoints[seg + 1];
 
@@ -979,7 +988,7 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
 
         size_t seg_steps = std::max<size_t>(1, static_cast<size_t>(std::ceil(seg_length / cartesian_step)));
 
-        for (size_t i = (seg == 0 ? 1 : 0); i <= seg_steps; ++i) {
+        for (size_t i = (seg == 0 ? 1 : 0); i <= seg_steps && !sampling_failed; ++i) {
             // 对于第一段，从 i=1 开始（跳过起始点，因为已经加入了）
             // 对于之后的段，从 i=0 开始但会跳过重复点
 
@@ -1022,7 +1031,8 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
             }
 
             if (!valid_solution) {
-                goto EXIT_CIRCLE_SAMPLING;
+                sampling_failed = true;
+                break;
             }
 
             /* ========================================================
@@ -1036,7 +1046,8 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
                         rclcpp::get_logger("MoveCPlanningStrategy"),
                         "Hard joint jump %.3f rad at joint %d (seg %zu, t=%.3f), abort",
                         dq, j, seg, t);
-                    goto EXIT_CIRCLE_SAMPLING;
+                    sampling_failed = true;
+                    break;
                 }
 
                 if (dq > SOFT_JUMP && !in_sing_area) {
@@ -1054,12 +1065,12 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
         }
     }
 
-EXIT_CIRCLE_SAMPLING:
-
-    // 如果IK失败，立即返回空轨迹
-    if (ik_failure) {
+    /* ============================================================
+     * Circle sampling error check
+     * ============================================================ */
+    if (sampling_failed) {
         RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "❎ Circle planning aborted due to IK failure - returning empty trajectory");
+                    "❎ Circle planning aborted due to sampling failure - returning empty trajectory");
         return std::vector<Eigen::VectorXd>{};
     }
 

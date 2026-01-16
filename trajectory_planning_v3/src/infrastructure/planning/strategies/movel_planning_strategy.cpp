@@ -123,11 +123,12 @@ MoveLPlanningStrategy::sampleCartesianPath(
     const double SOFT_JUMP = 0.35;   // rad  → SingArea
     const double HARD_JUMP = 1.20;   // rad  → topology break
     bool in_sing_area = false;
+    bool sampling_failed = false;
 
     /* ============================================================
      * 4. Cartesian sampling + IK
      * ============================================================ */
-    for (size_t i = 0; i <= steps; ++i) {
+    for (size_t i = 0; i <= steps && !sampling_failed; ++i) {
         double s = std::min(1.0, double(i) / steps);
 
         geometry_msgs::msg::Pose pose;
@@ -144,8 +145,8 @@ MoveLPlanningStrategy::sampleCartesianPath(
         if (!tracik_->computeIKClosest(pose, seed, q_raw)) {
             RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
                         "❌ IK failed at s=%.3f (already retried 5 times internally), aborting MoveL planning", s);
-            q_path.clear();
-            return q_path;
+            sampling_failed = true;
+            break;
         }
 
         Eigen::VectorXd q(q_raw.size());
@@ -170,7 +171,8 @@ MoveLPlanningStrategy::sampleCartesianPath(
         }
 
         if (!valid_solution) {
-            goto EXIT_SAMPLING;
+            sampling_failed = true;
+            break;
         }
 
         /* ========================================================
@@ -184,7 +186,8 @@ MoveLPlanningStrategy::sampleCartesianPath(
                     rclcpp::get_logger("MoveLPlanningStrategy"),
                     "Hard joint jump %.3f rad at joint %d (s=%.3f), abort",
                     dq, j, s);
-                goto EXIT_SAMPLING;
+                sampling_failed = true;
+                break;
             }
 
             if (dq > SOFT_JUMP && !in_sing_area) {
@@ -196,11 +199,12 @@ MoveLPlanningStrategy::sampleCartesianPath(
             }
         }
 
+        if (sampling_failed)
+            break;
+
         q_path.push_back(q);
         q_prev = q;
     }
-
-EXIT_SAMPLING:
 
     /* ============================================================
      * 7. Enforce exact goal pose IK (ABB behavior)
@@ -210,7 +214,11 @@ EXIT_SAMPLING:
                                  q_prev.data() + q_prev.size());
         std::vector<double> q_goal;
 
-        if (tracik_->computeIKClosest(goal_pose, seed, q_goal)) {
+        if (!tracik_->computeIKClosest(goal_pose, seed, q_goal)) {
+            RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
+                        "❌ Goal pose IK failed (already retried 5 times internally), aborting MoveL planning");
+            sampling_failed = true;
+        } else {
             Eigen::VectorXd qg(q_goal.size());
             bool valid_goal = true;
             for (size_t j = 0; j < q_goal.size(); ++j) {
@@ -230,12 +238,24 @@ EXIT_SAMPLING:
 
             if (valid_goal) {
                 q_path.back() = qg;
+            } else {
+                sampling_failed = true;
             }
         }
     }
 
     /* ============================================================
-     * 8. Final sanity
+     * 8. Final unified error check
+     * ============================================================ */
+    if (sampling_failed) {
+        RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
+                    "❌ MoveL planning failed, returning empty trajectory");
+        q_path.clear();
+        return q_path;
+    }
+
+    /* ============================================================
+     * 9. Final sanity
      * ============================================================ */
     if (q_path.size() < 2) {
         RCLCPP_WARN(rclcpp::get_logger("MoveLPlanningStrategy"),
