@@ -97,6 +97,7 @@ private:
 	 * @param start_pose 起点位姿
 	 * @param via_point 中间点位姿
 	 * @param goal_pose 目标位姿
+	 * @param arm_type 机械臂类型（用于加载对应的关节限制）
 	 * @param cartesian_step 笛卡尔采样步长
 	 * @return 关节空间路径
 	 */
@@ -104,6 +105,7 @@ private:
 	    const geometry_msgs::msg::Pose& start_pose,
 	    const geometry_msgs::msg::Pose& via_point,
 	    const geometry_msgs::msg::Pose& goal_pose,
+	    const std::string& arm_type = "arm620",
 	    double cartesian_step = 0.02) const;
 
 	/**

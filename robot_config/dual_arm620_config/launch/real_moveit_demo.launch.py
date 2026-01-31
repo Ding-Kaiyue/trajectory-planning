@@ -61,7 +61,7 @@ def my_generate_move_group_launch(ld, moveit_config):
         "publish_transforms_updates": should_publish,
         "monitor_dynamics": False,
         "use_joint_state_topic": True,
-        "use_sim_time": True,
+        "use_sim_time": False,
     }
 
     trajectory_execution = {

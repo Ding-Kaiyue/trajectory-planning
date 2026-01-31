@@ -15,7 +15,7 @@ def launch_moveit_config(context, *args, **kwargs):
     elif robot_model_name == 'arm380':
         config_pkg = 'arm380_config'
     elif robot_model_name == 'dual_arm620':
-        config_pkg = 'dual_arm_config'
+        config_pkg = 'dual_arm620_config'
     else:
         raise ValueError(f'Unsupported robot model name: {robot_model_name}')
     

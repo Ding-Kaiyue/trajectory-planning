@@ -484,6 +484,50 @@ std::vector<double> MoveItAdapter::getCurrentJointState() const {
 	return latest_joint_state_->position;
 }
 
+std::string MoveItAdapter::getBaseLink() const {
+	if (!move_group_) {
+		RCLCPP_ERROR(node_->get_logger(), "MoveGroup not initialized");
+		return "";
+	}
+
+	auto robot_model = move_group_->getRobotModel();
+	if (!robot_model) {
+		RCLCPP_ERROR(node_->get_logger(), "Failed to get robot model");
+		return "";
+	}
+
+	const auto* joint_model_group = robot_model->getJointModelGroup(move_group_->getName());
+	if (!joint_model_group) {
+		RCLCPP_ERROR(node_->get_logger(), "Failed to get joint model group for '%s'", move_group_->getName().c_str());
+		return "";
+	}
+
+	// 获取planning group中的第一个活跃关节，其parent link就是base_link
+	const auto& active_joints = joint_model_group->getActiveJointModels();
+	if (active_joints.empty()) {
+		RCLCPP_ERROR(node_->get_logger(), "No active joints found in planning group '%s'", move_group_->getName().c_str());
+		return "";
+	}
+
+	// 第一个active joint的parent link就是base_link
+	const auto* first_joint = active_joints.front();
+	if (!first_joint) {
+		RCLCPP_ERROR(node_->get_logger(), "First active joint is null in planning group '%s'", move_group_->getName().c_str());
+		return "";
+	}
+
+	const auto* parent_link = first_joint->getParentLinkModel();
+	if (!parent_link) {
+		RCLCPP_ERROR(node_->get_logger(), "Parent link of first active joint is null in planning group '%s'", move_group_->getName().c_str());
+		return "";
+	}
+
+	std::string base_link = parent_link->getName();
+	RCLCPP_INFO(node_->get_logger(), "Base link for planning group '%s': %s",
+	            move_group_->getName().c_str(), base_link.c_str());
+	return base_link;
+}
+
 std::string MoveItAdapter::getURDFString(const std::string& arm_type) const {
 	if (!node_) {
 		return "";

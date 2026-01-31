@@ -23,6 +23,7 @@ public:
     /**
      * @brief 笛卡尔直线规划 - Joint Space 约束版本（使用 TimeOptimalTrajectoryGeneration）
      * @param goal 目标位姿
+     * @param arm_type 机械臂类型（用于加载对应的关节限制）
      * @param sample_alpha 笛卡尔路径采样间隔 (0.0-1.0)，默认 0.02
      * @return 轨迹（满足关节空间约束，末端速度严格为零）
      *
@@ -34,6 +35,7 @@ public:
      */
     domain::entities::Trajectory planWithJointConstraints(
         const geometry_msgs::msg::Pose& goal,
+        const std::string& arm_type = "arm620",
         double eef_step = 0.02);
 
 private:
@@ -44,12 +46,14 @@ private:
      * @brief 内部辅助：沿笛卡尔直线进行 IK 采样，得到关节空间路径
      * @param start_pose 起始位姿
      * @param goal_pose 目标位姿
+     * @param arm_type 机械臂类型（用于加载对应的关节限制）
      * @param sample_alpha 采样间隔
      * @return 采样得到的关节位置序列
      */
     std::vector<Eigen::VectorXd> sampleCartesianPath(
         const geometry_msgs::msg::Pose& start_pose,
         const geometry_msgs::msg::Pose& goal_pose,
+        const std::string& arm_type = "arm620",
         double cartesian_step = 0.02) const;
 	
 	/**

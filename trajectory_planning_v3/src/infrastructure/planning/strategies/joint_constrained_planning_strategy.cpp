@@ -9,18 +9,13 @@
 namespace trajectory_planning::infrastructure::planning {
 
 void JointConstrainedPlanningStrategy::addConstraint(
-    std::shared_ptr<JointConstraint> constraint, bool validate) {
-	if (validate && constraint) {
-		auto result =
-		    validateSingleConstraint(constraint, 1);  // INFO/WARN level logging
-
-		// 对于冲突的约束，额外显示警告
-		if (result == ConstraintValidationResult::RANGE_NO_INTERSECTION ||
-		    result == ConstraintValidationResult::FIXED_OUT_OF_LIMITS) {
-			RCLCPP_WARN(rclcpp::get_logger("JointConstrainedPlanningStrategy"),
-			            "Adding conflicting constraint anyway, but this will "
-			            "cause planning failures!");
-		}
+    std::shared_ptr<JointConstraint> constraint, 
+	[[maybe_unused]] bool validate) {
+	// Note: Constraint validation is deferred to plan() where arm_type is known
+	// The validate parameter is kept for API compatibility but validation happens in plan()
+	if (constraint) {
+		RCLCPP_DEBUG(rclcpp::get_logger("JointConstrainedPlanningStrategy"),
+		            "Added constraint: will be validated during planning with actual arm_type");
 	}
 
 	constraints_.push_back(constraint);
@@ -77,7 +72,7 @@ bool JointConstrainedPlanningStrategy::validateAllConstraints(
 
 	// 1. 验证每个约束与关节限制的兼容性
 	for (const auto& constraint : constraints_) {
-		auto result = validateSingleConstraint(constraint, log_level);
+		auto result = validateSingleConstraint(constraint, arm_type, log_level);
 
 		if (result != ConstraintValidationResult::VALID &&
 		    result != ConstraintValidationResult::LIMITS_UNAVAILABLE) {
@@ -156,12 +151,14 @@ bool JointConstrainedPlanningStrategy::validateAllConstraints(
 
 JointConstrainedPlanningStrategy::ConstraintValidationResult
 JointConstrainedPlanningStrategy::validateSingleConstraint(
-    std::shared_ptr<JointConstraint> constraint, int log_level) const {
+    std::shared_ptr<JointConstraint> constraint,
+    const std::string& arm_type,
+    int log_level) const {
 	if (!constraint) {
 		return ConstraintValidationResult::VALID;
 	}
 
-	auto joint_limits = moveit_adapter_.getJointLimits();
+	auto joint_limits = moveit_adapter_.getJointLimits(arm_type);
 	if (joint_limits.empty()) {
 		if (log_level >= 1) {
 			RCLCPP_WARN(rclcpp::get_logger("ConstrainedPlanningStrategy"),

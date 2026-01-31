@@ -73,9 +73,9 @@ domain::entities::Trajectory MoveCPlanningStrategy::planArc(
     const geometry_msgs::msg::Pose& start_pose,
     const geometry_msgs::msg::Pose& goal_pose,
     const geometry_msgs::msg::Pose& via_point) {
-	
+
 	domain::entities::Trajectory traj;
-	
+
 	// 重新加载缩放参数（支持动态参数更新）
 	moveit_->loadScalingParameters();
 
@@ -178,7 +178,7 @@ domain::entities::Trajectory MoveCPlanningStrategy::planBezier(
 domain::entities::Trajectory MoveCPlanningStrategy::planCircle(
     const geometry_msgs::msg::Pose& center,
     const geometry_msgs::msg::Pose& radius_point) {
-	
+
 	domain::entities::Trajectory traj;
 
 	// 重新加载缩放参数（支持动态参数更新）
@@ -251,7 +251,7 @@ domain::entities::Trajectory MoveCPlanningStrategy::planCircleThrough3Points(
     const geometry_msgs::msg::Pose& p1,
     const geometry_msgs::msg::Pose& p2,
     const geometry_msgs::msg::Pose& p3) {
-	
+
 	domain::entities::Trajectory traj;
 
 	// 重新加载缩放参数（支持动态参数更新）
@@ -260,7 +260,7 @@ domain::entities::Trajectory MoveCPlanningStrategy::planCircleThrough3Points(
 	/* -----------------------------
     * 1. Cartesian sampling → joint path
     * ----------------------------- */
-	std::vector<Eigen::VectorXd> q_path = 
+	std::vector<Eigen::VectorXd> q_path =
 		sampleArcCartesianPath(p1, p2, p3);
 
 	if (q_path.size() < 3) {
@@ -312,6 +312,7 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
     const geometry_msgs::msg::Pose& start_pose,
     const geometry_msgs::msg::Pose& via_point,
     const geometry_msgs::msg::Pose& goal_pose,
+    const std::string& arm_type,
     double cartesian_step) const
 {
     std::vector<Eigen::VectorXd> q_path;
@@ -349,8 +350,8 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
 
         q_path.reserve(steps + 1);
         q_path.push_back(q_prev);
-        
-        auto joint_limits = moveit_->getJointLimits();
+
+        auto joint_limits = moveit_->getJointLimits(arm_type);
         if (joint_limits.empty()) {
             RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
                         "Failed to get joint limits");
@@ -570,7 +571,6 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
      * 5. 第二阶段：对笛卡尔点进行IK求解
      * ============================================================ */
     bool sampling_failed = false;
-    int failed_count = 0;
     for (size_t i = 0; i < cartesian_poses.size() && !sampling_failed; ++i) {
         const auto& pose = cartesian_poses[i];
         double t = (i == 0) ? 0.0 : static_cast<double>(i - 1) / steps;
@@ -667,7 +667,7 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
                 if (std::isnan(q_wrapped)) {
                     RCLCPP_WARN(
                         rclcpp::get_logger("MoveCPlanningStrategy"),
-                        "Goal IK solution joint %d %.3f rad exceeds limits [%.3f, %.3f]",
+                        "Goal IK solution joint %zu %.3f rad exceeds limits [%.3f, %.3f]",
                         j, q_goal[j], joint_limits[j].first, joint_limits[j].second);
                     valid_goal = false;
                     break;
@@ -876,7 +876,7 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
                 if (std::isnan(q_wrapped)) {
                     RCLCPP_WARN(
                         rclcpp::get_logger("MoveCPlanningStrategy"),
-                        "Goal IK solution joint %d %.3f rad exceeds limits [%.3f, %.3f]",
+                        "Goal IK solution joint %zu %.3f rad exceeds limits [%.3f, %.3f]",
                         j, q_goal[j], joint_limits[j].first, joint_limits[j].second);
                     valid_goal = false;
                     break;
@@ -1094,7 +1094,7 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
                 if (std::isnan(q_wrapped)) {
                     RCLCPP_WARN(
                         rclcpp::get_logger("MoveCPlanningStrategy"),
-                        "Goal IK solution joint %d %.3f rad exceeds limits [%.3f, %.3f]",
+                        "Goal IK solution joint %zu %.3f rad exceeds limits [%.3f, %.3f]",
                         j, q_goal[j], joint_limits[j].first, joint_limits[j].second);
                     valid_goal = false;
                     break;

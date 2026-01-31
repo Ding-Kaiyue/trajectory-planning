@@ -68,6 +68,7 @@ std::vector<Eigen::VectorXd>
 MoveLPlanningStrategy::sampleCartesianPath(
     const geometry_msgs::msg::Pose& start_pose,
     const geometry_msgs::msg::Pose& goal_pose,
+    const std::string& arm_type,
     double cartesian_step) const
 {
     std::vector<Eigen::VectorXd> q_path;
@@ -109,7 +110,7 @@ MoveLPlanningStrategy::sampleCartesianPath(
     /* ============================================================
      * 2.5. Get joint limits
      * ============================================================ */
-    auto joint_limits = moveit_->getJointLimits();
+    auto joint_limits = moveit_->getJointLimits(arm_type);
     if (joint_limits.empty()) {
         RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
                      "Failed to get joint limits");
@@ -162,8 +163,8 @@ MoveLPlanningStrategy::sampleCartesianPath(
             if (std::isnan(q_wrapped)) {
                 RCLCPP_WARN(
                     rclcpp::get_logger("MoveLPlanningStrategy"),
-                    "Joint %ld IK solution %.3f rad exceeds limits [%.3f, %.3f] at s=%.3f, abort",
-                    j, q_raw[j], joint_limits[j].first, joint_limits[j].second, s);
+                    "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at s=%.3f, abort",
+                    static_cast<int>(j), q_raw[j], joint_limits[j].first, joint_limits[j].second, s);
                 valid_solution = false;
                 break;
             }
@@ -228,7 +229,7 @@ MoveLPlanningStrategy::sampleCartesianPath(
                 if (std::isnan(q_wrapped)) {
                     RCLCPP_WARN(
                         rclcpp::get_logger("MoveLPlanningStrategy"),
-                        "Goal IK solution joint %d %.3f rad exceeds limits [%.3f, %.3f]",
+                        "Goal IK solution joint %zu %.3f rad exceeds limits [%.3f, %.3f]",
                         j, q_goal[j], joint_limits[j].first, joint_limits[j].second);
                     valid_goal = false;
                     break;
@@ -271,6 +272,7 @@ MoveLPlanningStrategy::sampleCartesianPath(
 domain::entities::Trajectory
 MoveLPlanningStrategy::planWithJointConstraints(
     const geometry_msgs::msg::Pose& goal,
+    const std::string& arm_type,
     double eef_step)
 {
 
@@ -288,7 +290,7 @@ MoveLPlanningStrategy::planWithJointConstraints(
     * 1. Cartesian sampling → joint path
     * ----------------------------- */
     std::vector<Eigen::VectorXd> q_path =
-        sampleCartesianPath(start_pose, goal, eef_step);
+        sampleCartesianPath(start_pose, goal, arm_type, eef_step);
 
     if (q_path.size() < 2) {
         RCLCPP_WARN(rclcpp::get_logger("MoveLPlanningStrategy"),

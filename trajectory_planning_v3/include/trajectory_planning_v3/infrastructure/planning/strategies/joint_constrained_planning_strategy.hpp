@@ -81,10 +81,10 @@ public:
 	/**
 	 * @brief 添加关节约束
 	 * @param constraint 约束（智能指针）
-	 * @param validate 是否验证约束与关节限制的兼容性（默认true）
+	 * @param validate 是否验证约束与关节限制的兼容性（默认true，已弃用）
 	 */
 	void addConstraint(std::shared_ptr<JointConstraint> constraint,
-	                   bool validate = true);
+	                   [[maybe_unused]] bool validate = true);
 
 	/**
 	 * @brief 移除所有约束
@@ -146,11 +146,14 @@ private:
 	/**
 	 * @brief 验证单个约束与关节限制的兼容性
 	 * @param constraint 要验证的约束
+	 * @param arm_type 机械臂类型（用于加载对应的关节限制）
 	 * @param log_level 日志级别 (0=无日志, 1=INFO/WARN, 2=ERROR)
 	 * @return 验证结果
 	 */
 	ConstraintValidationResult validateSingleConstraint(
-	    std::shared_ptr<JointConstraint> constraint, int log_level = 1) const;
+	    std::shared_ptr<JointConstraint> constraint,
+	    const std::string& arm_type = "arm620",
+	    int log_level = 1) const;
 
 	/**
 	 * @brief 获取约束的有效范围（与关节限制的交集）

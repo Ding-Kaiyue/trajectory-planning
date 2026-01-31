@@ -36,7 +36,8 @@ public:
 	// 简化的构造函数
 	MotionPlanningService(std::shared_ptr<infrastructure::integration::MoveItAdapter> moveit_adapter,
 	                      std::shared_ptr<infrastructure::integration::TracIKAdapter> tracik_adapter,
-	                      rclcpp::Node::SharedPtr node);
+	                      rclcpp::Node::SharedPtr node,
+	                      const std::string& arm_type = "arm620");
 
 	// 策略注册方法
 	void registerMoveJStrategy(std::shared_ptr<MoveJPlanningStrategy> strategy);

@@ -63,6 +63,12 @@ public:
 	std::string getEndEffectorLink() const;
 	std::vector<double> getCurrentJointState() const;
 
+	/**
+	 * @brief 获取规划组的基础链接
+	 * @return 基础链接名称（如 "left_base_link"、"right_base_link" 等）
+	 */
+	std::string getBaseLink() const;
+
 	// ===== 获取缩放参数 =====
 	/**
 	 * @brief 获取速度缩放因子

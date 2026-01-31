@@ -106,8 +106,8 @@ bool TracIKAdapter::initializeSolver(const std::string& arm_type) {
 			1e-5);  // epsilon
 
 		RCLCPP_INFO(node_->get_logger(),
-					"TRAC_IK persistent solver initialized for %s (%u joints)",
-					arm_type.c_str(), kdl_chain_.getNrOfJoints());
+					"TRAC_IK persistent solver initialized for %s",
+					arm_type.c_str());
 		return true;
 
 	} catch (const std::exception& e) {

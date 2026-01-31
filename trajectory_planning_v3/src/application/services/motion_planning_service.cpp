@@ -11,7 +11,8 @@ using namespace trajectory_planning::infrastructure::planning;
 MotionPlanningService::MotionPlanningService(
     std::shared_ptr<MoveItAdapter> moveit_adapter,
     std::shared_ptr<TracIKAdapter> tracik_adapter,
-    rclcpp::Node::SharedPtr node)
+    rclcpp::Node::SharedPtr node,
+    const std::string& arm_type)
     : movej_strategy_(nullptr),
       movel_strategy_(nullptr),
       movec_strategy_(nullptr),
@@ -23,31 +24,32 @@ MotionPlanningService::MotionPlanningService(
 	// 初始化 TracIKAdapter（用于 MoveL 规划）
 	tracik_adapter_->setMoveItAdapter(moveit_adapter_.get());
 
-	// 获取机械臂类型
-	std::string arm_type = "arm620";  // 默认值
-	if (node_->has_parameter("arm_type")) {
-		arm_type = node_->get_parameter("arm_type").as_string();
+	// 使用传入的机械臂类型（或默认值）
+	std::string effective_arm_type = arm_type;
+	if (effective_arm_type.empty()) {
+		effective_arm_type = "arm620";
 	}
 
 	// 从 MoveItAdapter 获取 URDF
-	std::string urdf_string = moveit_adapter_->getURDFString(arm_type);
+	std::string urdf_string = moveit_adapter_->getURDFString(effective_arm_type);
 	if (urdf_string.empty()) {
-		RCLCPP_WARN(logger_, "Failed to get URDF string for arm_type: %s", arm_type.c_str());
+		RCLCPP_WARN(logger_, "Failed to get URDF string for arm_type: %s", effective_arm_type.c_str());
 	} else {
-		std::string base_link = "base_link";
+		std::string base_link = moveit_adapter_->getBaseLink();
 		std::string end_effector_link = moveit_adapter_->getEndEffectorLink();
-		if (!end_effector_link.empty()) {
+		if (!base_link.empty() && !end_effector_link.empty()) {
 			if (tracik_adapter_->initializeKDLChain(urdf_string, base_link, end_effector_link)) {
-				if (tracik_adapter_->initializeSolver(arm_type)) {
-					RCLCPP_INFO(logger_, "TracIKAdapter initialized for arm_type: %s", arm_type.c_str());
+				if (tracik_adapter_->initializeSolver(effective_arm_type)) {
+					RCLCPP_INFO(logger_, "TracIKAdapter initialized for arm_type: %s", effective_arm_type.c_str());
 				} else {
-					RCLCPP_WARN(logger_, "Failed to initialize TRAC_IK solver for arm_type: %s", arm_type.c_str());
+					RCLCPP_WARN(logger_, "Failed to initialize TRAC_IK solver for arm_type: %s", effective_arm_type.c_str());
 				}
 			} else {
-				RCLCPP_WARN(logger_, "Failed to initialize KDL chain for arm_type: %s", arm_type.c_str());
+				RCLCPP_WARN(logger_, "Failed to initialize KDL chain for arm_type: %s (base_link='%s', end_effector='%s')",
+				            effective_arm_type.c_str(), base_link.c_str(), end_effector_link.c_str());
 			}
 		} else {
-			RCLCPP_WARN(logger_, "Failed to get end effector link from MoveItAdapter");
+			RCLCPP_WARN(logger_, "Failed to get base_link or end_effector_link from MoveItAdapter");
 		}
 	}
 }
