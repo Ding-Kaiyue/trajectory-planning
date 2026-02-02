@@ -14,7 +14,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
-    moveit_config = MoveItConfigsBuilder("dual_arm620", package_name="dual_arm_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder("dual_arm620", package_name="dual_arm620_config").to_moveit_configs()
 
     ld = LaunchDescription()
 
