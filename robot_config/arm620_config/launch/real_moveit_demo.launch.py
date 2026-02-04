@@ -82,11 +82,10 @@ def my_generate_move_group_launch(ld, moveit_config):
         package="moveit_ros_move_group",
         executable="move_group",
         commands_file=str(moveit_config.package_path / "launch" / "gdb_settings.gdb"),
-        output="screen",
+        output="log",
         parameters=move_group_params,
-        extra_debug_args=["--debug"],
         # Set the display variable, in case OpenGL code is used internally
-        additional_env={"DISPLAY": ":0"},
+        additional_env={"DISPLAY": ":0", "RCL_LOGGING_LEVEL": "ERROR"},
     )
     return ld
 

@@ -20,7 +20,8 @@ MotionPlanningService::MotionPlanningService(
       moveit_adapter_(moveit_adapter),
       tracik_adapter_(tracik_adapter),
       node_(node),
-      logger_(node->get_logger()) {
+      logger_(node->get_logger()),
+      arm_type_(arm_type) {
 	// 初始化 TracIKAdapter（用于 MoveL 规划）
 	tracik_adapter_->setMoveItAdapter(moveit_adapter_.get());
 
@@ -28,6 +29,7 @@ MotionPlanningService::MotionPlanningService(
 	std::string effective_arm_type = arm_type;
 	if (effective_arm_type.empty()) {
 		effective_arm_type = "arm620";
+		arm_type_ = "arm620";  // 同时更新成员变量
 	}
 
 	// 从 MoveItAdapter 获取 URDF
@@ -39,9 +41,7 @@ MotionPlanningService::MotionPlanningService(
 		std::string end_effector_link = moveit_adapter_->getEndEffectorLink();
 		if (!base_link.empty() && !end_effector_link.empty()) {
 			if (tracik_adapter_->initializeKDLChain(urdf_string, base_link, end_effector_link)) {
-				if (tracik_adapter_->initializeSolver(effective_arm_type)) {
-					RCLCPP_INFO(logger_, "TracIKAdapter initialized for arm_type: %s", effective_arm_type.c_str());
-				} else {
+				if (!tracik_adapter_->initializeSolver(effective_arm_type)) {
 					RCLCPP_WARN(logger_, "Failed to initialize TRAC_IK solver for arm_type: %s", effective_arm_type.c_str());
 				}
 			} else {
@@ -113,7 +113,7 @@ PlanningResult MotionPlanningService::planJointMotion(
 			                           "Planning failed");
 		}
 
-		return createSuccessResult(trajectory, "MoveJ");
+		return createSuccessResult(trajectory);
 	} catch (const std::exception& e) {
 		return createFailureResult("MoveJ",
 		                           std::string("Exception: ") + e.what());
@@ -127,14 +127,14 @@ PlanningResult MotionPlanningService::planLinearMotion(
 	}
 
 	try {
-		Trajectory trajectory = movel_strategy_->planWithJointConstraints(goal);
+		Trajectory trajectory = movel_strategy_->planWithJointConstraints(goal, arm_type_);
 
 		if (trajectory.empty()) {
 			RCLCPP_ERROR(logger_, "❎ MoveL: Planning strategy returned empty trajectory");
 			return createFailureResult("MoveL", "Planning failed");
 		}
 
-		return createSuccessResult(trajectory, "MoveL");
+		return createSuccessResult(trajectory);
 	} catch (const std::exception& e) {
 		RCLCPP_ERROR(logger_, "❎ MoveL: Exception during planning: %s", e.what());
 		return createFailureResult("MoveL",
@@ -174,7 +174,7 @@ PlanningResult MotionPlanningService::planArcMotion(
 			                           "Planning failed");
 		}
 
-		return createSuccessResult(trajectory, "MoveC");
+		return createSuccessResult(trajectory);
 	} catch (const std::exception& e) {
 		return createFailureResult("MoveC",
 		                           std::string("Exception: ") + e.what());
@@ -210,10 +210,7 @@ PlanningResult MotionPlanningService::planConstrainedMotion(
 		}
 
 		// 获取机械臂类型参数
-		std::string arm_type = "arm620";  // 默认值
-		if (node_->has_parameter("arm_type")) {
-			arm_type = node_->get_parameter("arm_type").as_string();
-		}
+	std::string arm_type = arm_type_;  // Use member variable instead of ROS parameter
 
 		Trajectory trajectory = joint_constrained_strategy_->plan(
 		    request.goal_pose, arm_type,
@@ -225,7 +222,7 @@ PlanningResult MotionPlanningService::planConstrainedMotion(
 			                           "Planning failed");
 		}
 
-		return createSuccessResult(trajectory, "JointConstrained");
+		return createSuccessResult(trajectory);
 	} catch (const std::exception& e) {
 		return createFailureResult("JointConstrained",
 		                           std::string("Exception: ") + e.what());
@@ -237,7 +234,7 @@ Trajectory MotionPlanningService::planArcTrajectory(
 	if (request.waypoints.size() != 2) {
 		RCLCPP_ERROR(
 		    logger_,
-		    "ARC route requires exactly 2 waypoints: [goal, via_point]");
+		    "ARC route requires exactly 2 waypoints: [via_point, goal]");
 		return Trajectory{};
 	}
 
@@ -246,20 +243,11 @@ Trajectory MotionPlanningService::planArcTrajectory(
 		return Trajectory{};
 	}
 
-	// 获取当前位姿
-	geometry_msgs::msg::Pose current_pose =
-	    moveit_adapter_->getCurrentPoseFromTF();
-	if (current_pose.position.x == 0 && current_pose.position.y == 0 &&
-	    current_pose.position.z == 0 && current_pose.orientation.x == 0 &&
-	    current_pose.orientation.y == 0 && current_pose.orientation.z == 0 &&
-	    current_pose.orientation.w == 0) {
-		RCLCPP_ERROR(logger_, "Failed to get current pose from TF");
-		return Trajectory{};
-	}
-
-	return movec_strategy_->planArc(current_pose, request.waypoints[0],
-	                                request.waypoints[1]);
+	// 策略层会内部获取当前位姿，确保和关节状态同步
+	return movec_strategy_->planArc(request.waypoints[0],
+	                                request.waypoints[1], arm_type_);
 }
+
 Trajectory MotionPlanningService::planBezierTrajectory(
     const trajectory_planning_interfaces::msg::MoveCRequest& request) {
 	if (request.waypoints.size() != 4) {
@@ -271,7 +259,7 @@ Trajectory MotionPlanningService::planBezierTrajectory(
 
 	return movec_strategy_->planBezier(
 	    request.waypoints[0], request.waypoints[1], request.waypoints[2],
-	    request.waypoints[3]);
+	    request.waypoints[3], arm_type_);
 }
 
 Trajectory MotionPlanningService::planCircleTrajectory(
@@ -283,7 +271,7 @@ Trajectory MotionPlanningService::planCircleTrajectory(
 		return Trajectory{};
 	}
 	return movec_strategy_->planCircle(request.waypoints[0],
-	                                   request.waypoints[1]);
+	                                   request.waypoints[1], arm_type_);
 }
 
 Trajectory MotionPlanningService::planCircle3PtTrajectory(
@@ -307,10 +295,7 @@ PlanningResult MotionPlanningService::createFailureResult(
 }
 
 PlanningResult MotionPlanningService::createSuccessResult(
-    const Trajectory& trajectory, const std::string& operation) {
-	RCLCPP_INFO(logger_, "[%s] Planned %zu pts, duration=%.2f s",
-	            operation.c_str(), trajectory.size(),
-	            trajectory.total_duration().seconds());
+    const Trajectory& trajectory) {
 	return PlanningResult(trajectory, true, "");
 }
 

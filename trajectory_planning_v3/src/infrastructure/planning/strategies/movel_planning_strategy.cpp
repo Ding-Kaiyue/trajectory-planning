@@ -132,12 +132,15 @@ MoveLPlanningStrategy::sampleCartesianPath(
     for (size_t i = 0; i <= steps && !sampling_failed; ++i) {
         double s = std::min(1.0, double(i) / steps);
 
-        geometry_msgs::msg::Pose pose;
-        pose.position.x = p0.x() + s * dp.x();
-        pose.position.y = p0.y() + s * dp.y();
-        pose.position.z = p0.z() + s * dp.z();
-        pose.orientation =
+        geometry_msgs::msg::Pose pose_world;
+        pose_world.position.x = p0.x() + s * dp.x();
+        pose_world.position.y = p0.y() + s * dp.y();
+        pose_world.position.z = p0.z() + s * dp.z();
+        pose_world.orientation =
             slerp(start_pose.orientation, goal_pose.orientation, s);
+
+        // 转换从 world 坐标到 base_link 坐标（IK solver 期望 base_link 坐标）
+        geometry_msgs::msg::Pose pose = moveit_->worldPoseToBaseLinkPose(pose_world);
 
         std::vector<double> seed(q_prev.data(),
                                  q_prev.data() + q_prev.size());
@@ -186,7 +189,7 @@ MoveLPlanningStrategy::sampleCartesianPath(
                 RCLCPP_WARN(
                     rclcpp::get_logger("MoveLPlanningStrategy"),
                     "Hard joint jump %.3f rad at joint %d (s=%.3f), abort",
-                    dq, j, s);
+                    dq, j + 1, s);
                 sampling_failed = true;
                 break;
             }
@@ -196,7 +199,7 @@ MoveLPlanningStrategy::sampleCartesianPath(
                 RCLCPP_WARN(
                     rclcpp::get_logger("MoveLPlanningStrategy"),
                     "Entering SingArea at s=%.3f (joint %d, dq=%.3f)",
-                    s, j, dq);
+                    s, j + 1, dq);
             }
         }
 
@@ -208,14 +211,17 @@ MoveLPlanningStrategy::sampleCartesianPath(
     }
 
     /* ============================================================
-     * 7. Enforce exact goal pose IK (ABB behavior)
+     * 7. Enforce exact goal pose IK
      * ============================================================ */
     if (!q_path.empty()) {
         std::vector<double> seed(q_prev.data(),
                                  q_prev.data() + q_prev.size());
         std::vector<double> q_goal;
 
-        if (!tracik_->computeIKClosest(goal_pose, seed, q_goal)) {
+        // 转换目标位姿从 world 到 base_link 坐标
+        geometry_msgs::msg::Pose goal_pose_baselink = moveit_->worldPoseToBaseLinkPose(goal_pose);
+
+        if (!tracik_->computeIKClosest(goal_pose_baselink, seed, q_goal)) {
             RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
                         "❌ Goal pose IK failed (already retried 5 times internally), aborting MoveL planning");
             sampling_failed = true;
@@ -282,9 +288,6 @@ MoveLPlanningStrategy::planWithJointConstraints(
     moveit_->loadScalingParameters();
 
     const auto start_pose = moveit_->getCurrentPoseFromTF();
-    const auto q0 = moveit_->getCurrentJointState();
-    if (q0.empty())
-        return traj;
 
     /* -----------------------------
     * 1. Cartesian sampling → joint path
@@ -313,9 +316,10 @@ MoveLPlanningStrategy::planWithJointConstraints(
     /* -----------------------------
     * 3. Time-optimal parameterization
     * ----------------------------- */
+    std::string planning_group = moveit_->getPlanningGroupName();
     domain::services::TimeOptimalTrajectoryParameterization totg(
         robot_model,
-        "arm",   // TODO: make configurable
+        planning_group,   // Use the correct planning group name (left_arm or right_arm)
         velocity_scaling,
         acceleration_scaling);
 
@@ -328,7 +332,6 @@ MoveLPlanningStrategy::planWithJointConstraints(
     }
 
     // printTrajectory(traj);
-
     return traj;
 }
 

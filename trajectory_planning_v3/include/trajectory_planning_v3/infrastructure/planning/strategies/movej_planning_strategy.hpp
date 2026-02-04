@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include <string>
 
 #include "trajectory_planning_v3/domain/entities/trajectory.hpp"
 #include "trajectory_planning_v3/domain/value_objects/joint_position.hpp"
@@ -18,8 +19,15 @@ namespace trajectory_planning::infrastructure::planning {
 
 class MoveJPlanningStrategy {
 public:
-	explicit MoveJPlanningStrategy(integration::MoveItAdapter& moveit_adapter)
-	    : moveit_adapter_(moveit_adapter) {}
+	explicit MoveJPlanningStrategy(
+	    integration::MoveItAdapter& moveit_adapter,
+	    const std::string& planning_group_name = "")
+	    : moveit_adapter_(moveit_adapter), planning_group_name_(planning_group_name) {
+		// 如果未提供planning group name，从adapter中获取
+		if (planning_group_name_.empty()) {
+			planning_group_name_ = moveit_adapter_.getPlanningGroupName();
+		}
+	}
 
 	/**
 	 * @brief 规划关节空间轨迹
@@ -31,6 +39,7 @@ public:
 
 private:
 	integration::MoveItAdapter& moveit_adapter_;
+	std::string planning_group_name_;
 
 	domain::entities::Trajectory convertTrajectoryType(
 	    const moveit_msgs::msg::RobotTrajectory& moveit_traj) const;

@@ -76,6 +76,7 @@ public:
 private:
 	rclcpp::Node::SharedPtr node_;
 	std::string move_group_name_;
+	std::string base_link_;  // 保存 base_link 名称，用于坐标转换
 	class MoveItAdapter* moveit_adapter_;
 
 	// KDL 缓存

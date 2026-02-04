@@ -3,6 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <kdl_parser/kdl_parser.hpp>
+#include <kdl/chainfksolverpos_recursive.hpp>
 #include <trac_ik/trac_ik.hpp>
 
 namespace trajectory_planning::infrastructure::integration {
@@ -46,11 +47,9 @@ bool TracIKAdapter::initializeKDLChain(const std::string& urdf_string,
 			return false;
 		}
 
+		base_link_ = base_link;  // 保存 base_link 名称供后续坐标转换使用
 		chain_initialized_ = true;
-		RCLCPP_INFO(node_->get_logger(),
-					"KDL chain initialized: %s -> %s with %u joints",
-					base_link.c_str(), tip_link.c_str(),
-					kdl_chain_.getNrOfJoints());
+
 		return true;
 
 	} catch (const std::exception& e) {
@@ -99,15 +98,13 @@ bool TracIKAdapter::initializeSolver(const std::string& arm_type) {
 			q_max_(i) = limits[i].second;
 		}
 
+
 		// Create persistent TRAC_IK solver (only once per MoveL planning)
 		ik_solver_ = std::make_unique<TRAC_IK::TRAC_IK>(
 			kdl_chain_, q_min_, q_max_,
-			0.005,   // max time per attempt (5ms)
+			0.05,   // max time per attempt (50ms)
 			1e-5);  // epsilon
 
-		RCLCPP_INFO(node_->get_logger(),
-					"TRAC_IK persistent solver initialized for %s",
-					arm_type.c_str());
 		return true;
 
 	} catch (const std::exception& e) {

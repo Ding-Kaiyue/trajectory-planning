@@ -2,6 +2,7 @@
 
 #include <moveit_msgs/msg/robot_trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <trajectory_planning_v3/domain/services/time_optimal_trajectory_generation.hpp>
 
 namespace trajectory_planning::infrastructure::planning {
 
@@ -15,7 +16,49 @@ domain::entities::Trajectory MoveJPlanningStrategy::plan(
 		return {};  // 返回空轨迹
 	}
 
-	return convertTrajectoryType(moveit_trajectory);
+	// 首先转换轨迹类型
+	trajectory = convertTrajectoryType(moveit_trajectory);
+
+	if (trajectory.points().empty()) {
+		RCLCPP_ERROR(rclcpp::get_logger("MoveJPlanningStrategy"),
+		             "Converted trajectory is empty!");
+		return {};
+	}
+
+	// 应用时间优化轨迹参数化，以确保加速度限制被遵守
+	auto robot_model = moveit_adapter_.getRobotModel();
+	if (!robot_model) {
+		RCLCPP_WARN(rclcpp::get_logger("MoveJPlanningStrategy"),
+		            "Could not get robot model for TOTG, returning unoptimized trajectory");
+		return trajectory;
+	}
+
+	double velocity_scaling = moveit_adapter_.getVelocityScalingFactor();
+	double acceleration_scaling = moveit_adapter_.getAccelerationScalingFactor();
+
+	domain::services::TimeOptimalTrajectoryParameterization totg(
+	    robot_model,
+	    planning_group_name_,
+	    velocity_scaling,
+	    acceleration_scaling);
+
+	// 从现有轨迹点提取关节位置序列，用于TOTG
+	std::vector<Eigen::VectorXd> q_path;
+	for (const auto& point : trajectory.points()) {
+		const auto& pos_values = point.position.values();
+		q_path.push_back(Eigen::Map<const Eigen::VectorXd>(
+		    pos_values.data(), pos_values.size()));
+	}
+
+	trajectory = totg.compute(q_path);
+
+	if (trajectory.points().empty()) {
+		RCLCPP_ERROR(rclcpp::get_logger("MoveJPlanningStrategy"),
+		             "TOTG failed, returning empty trajectory");
+		return {};
+	}
+
+	return trajectory;
 }
 
 domain::entities::Trajectory MoveJPlanningStrategy::convertTrajectoryType(

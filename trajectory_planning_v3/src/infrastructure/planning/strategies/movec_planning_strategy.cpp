@@ -70,20 +70,23 @@ inline double wrapToNearest(double q, double q_ref, double q_min, double q_max)
 }
 
 domain::entities::Trajectory MoveCPlanningStrategy::planArc(
-    const geometry_msgs::msg::Pose& start_pose,
+    const geometry_msgs::msg::Pose& via_point,
     const geometry_msgs::msg::Pose& goal_pose,
-    const geometry_msgs::msg::Pose& via_point) {
+    const std::string& arm_type) {
 
 	domain::entities::Trajectory traj;
 
 	// 重新加载缩放参数（支持动态参数更新）
 	moveit_->loadScalingParameters();
 
+	// 在策略层内部获取当前位姿，确保和关节状态同步
+	geometry_msgs::msg::Pose start_pose = moveit_->getCurrentPoseFromTF();
+
 	/* -----------------------------
     * 1. Cartesian sampling → joint path
     * ----------------------------- */
 	std::vector<Eigen::VectorXd> q_path =
-		sampleArcCartesianPath(start_pose, via_point, goal_pose);
+		sampleArcCartesianPath(start_pose, via_point, goal_pose, arm_type);
 
 	if (q_path.size() < 3) {
 		RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
@@ -104,9 +107,10 @@ domain::entities::Trajectory MoveCPlanningStrategy::planArc(
 	/* -----------------------------
     * 3. Time-optimal parameterization
     * ----------------------------- */
+	std::string planning_group = moveit_->getPlanningGroupName();
 	domain::services::TimeOptimalTrajectoryParameterization totg(
 	    robot_model,
-		"arm",   // TODO: make configurable
+		planning_group,   // Use the correct planning group name (left_arm or right_arm)
 		velocity_scaling,
 		acceleration_scaling);
 
@@ -125,8 +129,9 @@ domain::entities::Trajectory MoveCPlanningStrategy::planBezier(
     const geometry_msgs::msg::Pose& start,
     const geometry_msgs::msg::Pose& ctrl1,
     const geometry_msgs::msg::Pose& ctrl2,
-    const geometry_msgs::msg::Pose& goal) {
-	
+    const geometry_msgs::msg::Pose& goal,
+    const std::string& arm_type) {
+
 	domain::entities::Trajectory traj;
 
     // 重新加载缩放参数（支持动态参数更新）
@@ -135,8 +140,8 @@ domain::entities::Trajectory MoveCPlanningStrategy::planBezier(
 	/* -----------------------------
     * 1. Cartesian sampling → joint path
     * ----------------------------- */
-	std::vector<Eigen::VectorXd> q_path = 
-		sampleBezierCartesianPath(start, ctrl1, ctrl2, goal);
+	std::vector<Eigen::VectorXd> q_path =
+		sampleBezierCartesianPath(start, ctrl1, ctrl2, goal, arm_type);
 
 	if (q_path.size() < 3) {
 		RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
@@ -157,9 +162,10 @@ domain::entities::Trajectory MoveCPlanningStrategy::planBezier(
 	/* -----------------------------
     * 3. Time-optimal parameterization
     * ----------------------------- */
+	std::string planning_group = moveit_->getPlanningGroupName();
 	domain::services::TimeOptimalTrajectoryParameterization totg(
 	    robot_model,
-		"arm",
+		planning_group,   // Use the correct planning group name
 		velocity_scaling,
 		acceleration_scaling);
 
@@ -177,7 +183,8 @@ domain::entities::Trajectory MoveCPlanningStrategy::planBezier(
 
 domain::entities::Trajectory MoveCPlanningStrategy::planCircle(
     const geometry_msgs::msg::Pose& center,
-    const geometry_msgs::msg::Pose& radius_point) {
+    const geometry_msgs::msg::Pose& radius_point,
+    const std::string& arm_type) {
 
 	domain::entities::Trajectory traj;
 
@@ -208,7 +215,7 @@ domain::entities::Trajectory MoveCPlanningStrategy::planCircle(
 	}
 
 	// 使用高级采样方法获得关节空间路径（包含关节跳跃检测）
-	std::vector<Eigen::VectorXd> q_path = sampleCircleCartesianPath(waypoints, 0.01);
+	std::vector<Eigen::VectorXd> q_path = sampleCircleCartesianPath(waypoints, arm_type, 0.01);
 
 	if (q_path.size() < 3) {
 		RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
@@ -229,9 +236,10 @@ domain::entities::Trajectory MoveCPlanningStrategy::planCircle(
 	/* -----------------------------
     * 3. Time-optimal parameterization
     * ----------------------------- */
+	std::string planning_group = moveit_->getPlanningGroupName();
 	domain::services::TimeOptimalTrajectoryParameterization totg(
 	    robot_model,
-		"arm",
+		planning_group,   // Use the correct planning group name
 		velocity_scaling,
 		acceleration_scaling);
 
@@ -276,12 +284,13 @@ domain::entities::Trajectory MoveCPlanningStrategy::planCircleThrough3Points(
 	double acceleration_scaling = moveit_->getAccelerationScalingFactor();
 
 	auto robot_model = moveit_->getRobotModel();
-	if (!robot_model) 
+	if (!robot_model)
 		return traj;
 
+	std::string planning_group = moveit_->getPlanningGroupName();
 	domain::services::TimeOptimalTrajectoryParameterization totg(
 	    robot_model,
-		"arm",
+		planning_group,   // Use the correct planning group name
 		velocity_scaling,
 		acceleration_scaling);
 
@@ -317,13 +326,26 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
 {
     std::vector<Eigen::VectorXd> q_path;
 
+    if (cartesian_step <= 0.0) {
+        RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
+                     "cartesian_step must be > 0");
+        return q_path;
+    }
+
     /* ============================================================
-     * 1. 计算圆弧几何参数
+     * 0. 坐标系转换：将world坐标转换到base_link坐标
      * ============================================================ */
-    // 三点坐标
-    const double x1 = start_pose.position.x, y1 = start_pose.position.y;
-    const double x2 = via_point.position.x, y2 = via_point.position.y;
-    const double x3 = goal_pose.position.x, y3 = goal_pose.position.y;
+    geometry_msgs::msg::Pose start_pose_bl = moveit_->worldPoseToBaseLinkPose(start_pose);
+    geometry_msgs::msg::Pose via_point_bl = moveit_->worldPoseToBaseLinkPose(via_point);
+    geometry_msgs::msg::Pose goal_pose_bl = moveit_->worldPoseToBaseLinkPose(goal_pose);
+
+    /* ============================================================
+     * 1. 计算圆弧几何参数（在base_link坐标系中）
+     * ============================================================ */
+    // 三点坐标 (使用base_link坐标系)
+    const double x1 = start_pose_bl.position.x, y1 = start_pose_bl.position.y;
+    const double x2 = via_point_bl.position.x, y2 = via_point_bl.position.y;
+    const double x3 = goal_pose_bl.position.x, y3 = goal_pose_bl.position.y;
 
     // 计算圆心坐标
     const double d = 2.0 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
@@ -341,7 +363,8 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
 
         if (length < 1e-6) return q_path;
 
-        size_t steps = std::max<size_t>(1, static_cast<size_t>(std::ceil(length / cartesian_step)));
+        size_t steps = std::max<size_t>(
+            1, static_cast<size_t>(std::ceil(length / cartesian_step)));
 
         // 初始种子（拓扑锁定）
         Eigen::VectorXd q_prev = Eigen::Map<const Eigen::VectorXd>(
@@ -349,11 +372,10 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
             moveit_->getCurrentJointState().size());
 
         q_path.reserve(steps + 1);
-        q_path.push_back(q_prev);
 
         auto joint_limits = moveit_->getJointLimits(arm_type);
         if (joint_limits.empty()) {
-            RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
+            RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
                         "Failed to get joint limits");
             return q_path;
         }
@@ -364,21 +386,26 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
         bool in_sing_area = false;
         bool sampling_failed = false;
 
+
         // 使用直线插值（包含关节跳跃检测）
-        for (size_t i = 1; i <= steps && !sampling_failed; ++i) {
+        for (size_t i = 0; i <= steps && !sampling_failed; ++i) {
             double s = std::min(1.0, double(i) / steps);
-            geometry_msgs::msg::Pose pose;
-            pose.position.x = p0.x() + s * dp.x();
-            pose.position.y = p0.y() + s * dp.y();
-            pose.position.z = p0.z() + s * dp.z();
-            pose.orientation = slerp(start_pose.orientation, goal_pose.orientation, s);
+
+            geometry_msgs::msg::Pose pose_world;
+            pose_world.position.x = p0.x() + s * dp.x();
+            pose_world.position.y = p0.y() + s * dp.y();
+            pose_world.position.z = p0.z() + s * dp.z();
+            pose_world.orientation = slerp(start_pose.orientation, goal_pose.orientation, s);
+
+            // 转换从 world 坐标到 base_link 坐标（IK solver 期望 base_link 坐标）
+            geometry_msgs::msg::Pose pose = moveit_->worldPoseToBaseLinkPose(pose_world);
 
             std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
             std::vector<double> q_raw;
 
-            if (!tracik_->computeIKClosest(pose, seed, q_raw, 10)) {  // 增加到10次重试
+            if (!tracik_->computeIKClosest(pose, seed, q_raw)) {
                 RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                            "❎ IK failed at linear fallback s=%.3f - aborting", s);
+                            "❌ IK failed at linear fallback s=%.3f (already retried 5 times internally), aborting MoveC planning", s);
                 sampling_failed = true;
                 break;
             }
@@ -392,9 +419,9 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
                                                 joint_limits[j].second);
                 if (std::isnan(q_wrapped)) {
                     RCLCPP_WARN(
-                        rclcpp::get_logger("MoveLPlanningStrategy"),
+                        rclcpp::get_logger("MoveCPlanningStrategy"),
                         "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at s=%.3f, abort",
-                        j, q_raw[j], joint_limits[j].first, joint_limits[j].second, s);
+                        static_cast<int>(j), q_raw[j], joint_limits[j].first, joint_limits[j].second, s);
                     valid_solution = false;
                     break;
                 }
@@ -449,7 +476,8 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
             std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
             std::vector<double> q_goal;
 
-            if (tracik_->computeIKClosest(goal_pose, seed, q_goal, 10)) {  // 增加到10次重试
+            // goal_pose_bl已经是base_link坐标，直接使用
+            if (tracik_->computeIKClosest(goal_pose_bl, seed, q_goal, 10)) {  // 增加到10次重试
                 Eigen::VectorXd qg(q_goal.size());
                 for (size_t j = 0; j < q_goal.size(); ++j)
                     qg[j] = wrapToNearest(q_goal[j], q_prev[j],
@@ -476,6 +504,15 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
                         (x3 * x3 + y3 * y3) * (x2 - x1)) / d;
     const double r = std::hypot(x1 - cx, y1 - cy);
 
+    // 验证三个点是否都在圆上
+    double r_via = std::hypot(x2 - cx, y2 - cy);
+    double r_goal = std::hypot(x3 - cx, y3 - cy);
+
+    if (std::fabs(r - r_via) > 1e-6 || std::fabs(r - r_goal) > 1e-6) {
+        RCLCPP_WARN(rclcpp::get_logger("MoveCPlanningStrategy"),
+                    "Via or goal point not on circle! Points may not be collinear or have numerical error");
+    }
+
     // 计算角度
     auto ang = [&](double x, double y) { return std::atan2(y - cy, x - cx); };
     double a_start = ang(x1, y1);
@@ -500,15 +537,19 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
     };
 
     if (!is_between(a_start, a_via, a_goal)) {
+        RCLCPP_WARN(rclcpp::get_logger("MoveCPlanningStrategy"),
+                    "Via point not between start and goal, adjusting goal angle");
         if (a_goal > a_start) a_goal -= 2 * M_PI;
         else a_goal += 2 * M_PI;
+        RCLCPP_INFO(rclcpp::get_logger("MoveCPlanningStrategy"),
+                    "Adjusted a_goal=%.4f rad", a_goal);
     }
 
     const double delta = a_goal - a_start;
     double arc_length = std::abs(delta) * r;
     double total_length = std::sqrt(
         arc_length * arc_length +
-        std::pow(goal_pose.position.z - start_pose.position.z, 2));
+        std::pow(goal_pose_bl.position.z - start_pose_bl.position.z, 2));
 
     size_t steps = std::max<size_t>(1, static_cast<size_t>(std::ceil(total_length / cartesian_step)));
 
@@ -521,15 +562,12 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
     
     q_path.reserve(steps + 1);
 
-    // 将起始关节配置加入路径
-    q_path.push_back(q_prev);
-    
     /* ============================================================
      * 2.5. Get joint limits
      * ============================================================ */
-    auto joint_limits = moveit_->getJointLimits();
+    auto joint_limits = moveit_->getJointLimits(arm_type);
     if (joint_limits.empty()) {
-        RCLCPP_ERROR(rclcpp::get_logger("MoveLPlanningStrategy"),
+        RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
                      "Failed to get joint limits");
         return q_path;
     }
@@ -540,55 +578,36 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
     const double SOFT_JUMP = 0.35;   // rad  → SingArea
     const double HARD_JUMP = 1.20;   // rad  → topology break
     bool in_sing_area = false;
+    bool sampling_failed = false;
 
     /* ============================================================
-     * 4. 圆弧采样 + IK
+     * 4. 圆弧采样 + IK（在单个循环中，base_link坐标采样）
      * ============================================================ */
-    // 第一阶段：生成所有笛卡尔采样点（纯几何，不涉及IK）
-    std::vector<geometry_msgs::msg::Pose> cartesian_poses;
-    cartesian_poses.reserve(steps + 1);
+    for (size_t i = 0; i <= steps && !sampling_failed; ++i) {
+        double s = std::min(1.0, double(i) / steps);
+        double ang_i = a_start + s * delta;
 
-    // 加入起始点
-    cartesian_poses.push_back(start_pose);
-
-    for (size_t i = 1; i <= steps; ++i) {
-        double t = std::min(1.0, double(i) / steps);
-        double ang_i = a_start + t * delta;
-
+        // 在 base_link 坐标中生成圆弧点
         geometry_msgs::msg::Pose pose;
         pose.position.x = cx + r * std::cos(ang_i);
         pose.position.y = cy + r * std::sin(ang_i);
-        pose.position.z = start_pose.position.z + t * (goal_pose.position.z - start_pose.position.z);
-        pose.orientation = slerp(start_pose.orientation, goal_pose.orientation, t);
-
-        cartesian_poses.push_back(pose);
-    }
-
-    RCLCPP_DEBUG(rclcpp::get_logger("MoveCPlanningStrategy"),
-                "Phase 1 complete: Generated %zu cartesian poses", cartesian_poses.size());
-
-    /* ============================================================
-     * 5. 第二阶段：对笛卡尔点进行IK求解
-     * ============================================================ */
-    bool sampling_failed = false;
-    for (size_t i = 0; i < cartesian_poses.size() && !sampling_failed; ++i) {
-        const auto& pose = cartesian_poses[i];
-        double t = (i == 0) ? 0.0 : static_cast<double>(i - 1) / steps;
+        pose.position.z = start_pose_bl.position.z + s * (goal_pose_bl.position.z - start_pose_bl.position.z);
+        pose.orientation = slerp(start_pose_bl.orientation, goal_pose_bl.orientation, s);
 
         std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
         std::vector<double> q_raw;
 
         if (!tracik_->computeIKClosest(pose, seed, q_raw)) {
             RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                        "❌ IK failed for cartesian pose %zu/%zu (progress: %.1f%%) - aborting arc planning",
-                        i, cartesian_poses.size(), (100.0 * i / cartesian_poses.size()));
-            return std::vector<Eigen::VectorXd>{};
+                        "❌ IK failed at s=%.3f (already retried 5 times internally), aborting MoveC arc planning", s);
+            sampling_failed = true;
+            break;
         }
 
         Eigen::VectorXd q(q_raw.size());
 
         /* ========================================================
-         * 5. 关节包装（ABB风格）with limit checking
+         * 5. 关节包装 with limit checking
          * ======================================================== */
         bool valid_solution = true;
         for (int j = 0; j < q.size(); ++j) {
@@ -598,8 +617,8 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
             if (std::isnan(q_wrapped)) {
                 RCLCPP_WARN(
                     rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at t=%.3f, abort",
-                    j, q_raw[j], joint_limits[j].first, joint_limits[j].second, t);
+                    "Joint %d IK solution %.3f rad exceeds limits [%.3f, %.3f] at s=%.3f, abort",
+                    static_cast<int>(j), q_raw[j], joint_limits[j].first, joint_limits[j].second, s);
                 valid_solution = false;
                 break;
             }
@@ -620,8 +639,12 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
             if (dq > HARD_JUMP) {
                 RCLCPP_WARN(
                     rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "Hard joint jump %.3f rad at joint %d (t=%.3f), abort",
-                    dq, j, t);
+                    "Hard joint jump %.3f rad at joint %d (s=%.3f), abort",
+                    dq, j + 1, s);
+                RCLCPP_WARN(
+                    rclcpp::get_logger("MoveCPlanningStrategy"),
+                    "  q_prev[%d]=%.4f, q[%d]=%.4f",
+                    j, q_prev[j], j, q[j]);
                 sampling_failed = true;
                 break;
             }
@@ -630,34 +653,31 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
                 in_sing_area = true;
                 RCLCPP_WARN(
                     rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "Entering SingArea at t=%.3f (joint %d, dq=%.3f)",
-                    t, j, dq);
+                    "Entering SingArea at s=%.3f (joint %d, dq=%.3f)",
+                    s, j + 1, dq);
             }
         }
+
+        if (sampling_failed)
+            break;
 
         q_path.push_back(q);
         q_prev = q;
     }
 
     /* ============================================================
-     * Arc sampling error check
+     * 7. 强制精确目标位姿IK
      * ============================================================ */
-    if (sampling_failed) {
-        RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "❎ Arc planning aborted due to sampling failure - returning empty trajectory");
-        return std::vector<Eigen::VectorXd>{};
-    }
-
-    /* ============================================================
-     * 7. 强制精确目标位姿IK（ABB行为）
-     * 仅在采样成功收集足够点数时执行
-     * ============================================================ */
-    // 只有采样成功得到3个或更多点时，才执行精确目标IK覆盖
-    if (q_path.size() >= 3) {
-        std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
+    if (!q_path.empty()) {
+        std::vector<double> seed(q_prev.data(),
+                                 q_prev.data() + q_prev.size());
         std::vector<double> q_goal;
 
-        if (tracik_->computeIKClosest(goal_pose, seed, q_goal)) {
+        if (!tracik_->computeIKClosest(goal_pose_bl, seed, q_goal)) {
+            RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
+                        "❌ Goal pose IK failed (already retried 5 times internally), aborting MoveC arc planning");
+            sampling_failed = true;
+        } else {
             Eigen::VectorXd qg(q_goal.size());
             bool valid_goal = true;
             for (size_t j = 0; j < q_goal.size(); ++j) {
@@ -677,16 +697,28 @@ MoveCPlanningStrategy::sampleArcCartesianPath(
 
             if (valid_goal) {
                 q_path.back() = qg;
+            } else {
+                sampling_failed = true;
             }
         }
     }
 
     /* ============================================================
-     * 8. 最终检查：采样必须成功收集至少3个点
+     * 8. Final unified error check
      * ============================================================ */
-    if (q_path.size() < 3) {
+    if (sampling_failed) {
+        RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
+                    "❌ MoveC arc planning failed, returning empty trajectory");
+        q_path.clear();
+        return q_path;
+    }
+
+    /* ============================================================
+     * 9. Final sanity
+     * ============================================================ */
+    if (q_path.size() < 2) {
         RCLCPP_WARN(rclcpp::get_logger("MoveCPlanningStrategy"),
-                    "Arc sampling produced insufficient points (%zu < 3)", q_path.size());
+                    "Arc sampling produced insufficient points");
         q_path.clear();
     }
 
@@ -699,6 +731,7 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
     const geometry_msgs::msg::Pose& ctrl1,
     const geometry_msgs::msg::Pose& ctrl2,
     const geometry_msgs::msg::Pose& goal,
+    const std::string& arm_type,
     double cartesian_step) const
 {
     std::vector<Eigen::VectorXd> q_path;
@@ -738,13 +771,10 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
 
     q_path.reserve(steps + 1);
 
-    // 将起始关节配置加入路径
-    q_path.push_back(q_prev);
-
     /* ============================================================
      * 2.5. Get joint limits
      * ============================================================ */
-    auto joint_limits = moveit_->getJointLimits();
+    auto joint_limits = moveit_->getJointLimits(arm_type);
     if (joint_limits.empty()) {
         RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
                      "Failed to get joint limits");
@@ -762,7 +792,8 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
      * 4. 贝塞尔曲线采样 + IK
      * ============================================================ */
     bool sampling_failed = false;
-    for (size_t i = 1; i <= steps && !sampling_failed; ++i) {
+
+    for (size_t i = 0; i <= steps && !sampling_failed; ++i) {
         double t = std::min(1.0, double(i) / steps);
         double t2 = t * t, t3 = t2 * t;
 
@@ -772,18 +803,21 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
         double b2 = 3 * (1 - t) * t * t;
         double b3 = t3;
 
-        geometry_msgs::msg::Pose pose;
+        geometry_msgs::msg::Pose pose_world;
 
         // 位置插值
-        pose.position.x = b0 * start.position.x + b1 * ctrl1.position.x +
+        pose_world.position.x = b0 * start.position.x + b1 * ctrl1.position.x +
                          b2 * ctrl2.position.x + b3 * goal.position.x;
-        pose.position.y = b0 * start.position.y + b1 * ctrl1.position.y +
+        pose_world.position.y = b0 * start.position.y + b1 * ctrl1.position.y +
                          b2 * ctrl2.position.y + b3 * goal.position.y;
-        pose.position.z = b0 * start.position.z + b1 * ctrl1.position.z +
+        pose_world.position.z = b0 * start.position.z + b1 * ctrl1.position.z +
                          b2 * ctrl2.position.z + b3 * goal.position.z;
 
         // 姿态插值（使用slerp而不是线性插值以避免四元数问题）
-        pose.orientation = slerp(start.orientation, goal.orientation, t);
+        pose_world.orientation = slerp(start.orientation, goal.orientation, t);
+
+        // Transform from world coordinate to base_link coordinate
+        geometry_msgs::msg::Pose pose = moveit_->worldPoseToBaseLinkPose(pose_world);
 
         std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
         std::vector<double> q_raw;
@@ -866,7 +900,9 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
         std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
         std::vector<double> q_goal;
 
-        if (tracik_->computeIKClosest(goal, seed, q_goal)) {
+        // Transform goal_pose from world to base_link coordinate
+        geometry_msgs::msg::Pose goal_pose_baselink = moveit_->worldPoseToBaseLinkPose(goal);
+        if (tracik_->computeIKClosest(goal_pose_baselink, seed, q_goal)) {
             Eigen::VectorXd qg(q_goal.size());
             bool valid_goal = true;
             for (size_t j = 0; j < q_goal.size(); ++j) {
@@ -905,6 +941,7 @@ MoveCPlanningStrategy::sampleBezierCartesianPath(
 std::vector<Eigen::VectorXd>
 MoveCPlanningStrategy::sampleCircleCartesianPath(
     const std::vector<geometry_msgs::msg::Pose>& waypoints,
+    const std::string& arm_type,
     double cartesian_step) const
 {
     std::vector<Eigen::VectorXd> q_path;
@@ -952,7 +989,7 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
     /* ============================================================
      * 2.5. Get joint limits
      * ============================================================ */
-    auto joint_limits = moveit_->getJointLimits();
+    auto joint_limits = moveit_->getJointLimits(arm_type);
     if (joint_limits.empty()) {
         RCLCPP_ERROR(rclcpp::get_logger("MoveCPlanningStrategy"),
                      "Failed to get joint limits");
@@ -965,9 +1002,6 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
     const double SOFT_JUMP = 0.35;   // rad  → SingArea
     const double HARD_JUMP = 1.20;   // rad  → topology break
     bool in_sing_area = false;
-
-    // 将起始关节配置加入路径
-    q_path.push_back(q_prev);
 
     /* ============================================================
      * 4. 圆形路径采样 + IK
@@ -988,17 +1022,20 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
 
         size_t seg_steps = std::max<size_t>(1, static_cast<size_t>(std::ceil(seg_length / cartesian_step)));
 
-        for (size_t i = (seg == 0 ? 1 : 0); i <= seg_steps && !sampling_failed; ++i) {
-            // 对于第一段，从 i=1 开始（跳过起始点，因为已经加入了）
-            // 对于之后的段，从 i=0 开始但会跳过重复点
+        for (size_t i = 0; i <= seg_steps && !sampling_failed; ++i) {
+            // 注意：对于第一段的i=0，这会给出segment起始点
+            // 而对于之后的段，起始点会重复（这没关系，因为连续的IK会给出一致的解）
 
             double t = std::min(1.0, double(i) / seg_steps);
 
-            geometry_msgs::msg::Pose pose;
-            pose.position.x = start_pose.position.x + t * dx;
-            pose.position.y = start_pose.position.y + t * dy;
-            pose.position.z = start_pose.position.z + t * dz;
-            pose.orientation = slerp(start_pose.orientation, end_pose.orientation, t);
+            geometry_msgs::msg::Pose pose_world;
+            pose_world.position.x = start_pose.position.x + t * dx;
+            pose_world.position.y = start_pose.position.y + t * dy;
+            pose_world.position.z = start_pose.position.z + t * dz;
+            pose_world.orientation = slerp(start_pose.orientation, end_pose.orientation, t);
+
+            // Transform from world coordinate to base_link coordinate
+            geometry_msgs::msg::Pose pose = moveit_->worldPoseToBaseLinkPose(pose_world);
 
             std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
             std::vector<double> q_raw;
@@ -1080,7 +1117,9 @@ MoveCPlanningStrategy::sampleCircleCartesianPath(
      * ============================================================ */
     // 只有采样成功得到3个或更多点时，才执行精确目标IK覆盖
     if (q_path.size() >= 3 && !waypoints.empty()) {
-        const auto& final_pose = waypoints.back();
+        const auto& final_pose_world = waypoints.back();
+        // Transform from world coordinate to base_link coordinate
+        geometry_msgs::msg::Pose final_pose = moveit_->worldPoseToBaseLinkPose(final_pose_world);
         std::vector<double> seed(q_prev.data(), q_prev.data() + q_prev.size());
         std::vector<double> q_goal;
 

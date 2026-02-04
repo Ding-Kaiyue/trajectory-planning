@@ -14,7 +14,8 @@ namespace trajectory_planning::infrastructure::integration {
 MoveItAdapter::MoveItAdapter(rclcpp::Node::SharedPtr node,
                              const std::string& move_group_name,
                              const std::string& controller_type)
-    : node_(node), tf_buffer_(node->get_clock()), tf_listener_(tf_buffer_),
+    : node_(node), planning_group_name_(move_group_name),
+      tf_buffer_(node->get_clock()), tf_listener_(tf_buffer_),
       controller_type_(controller_type) {
 	move_group_ =
 	    std::make_shared<moveit::planning_interface::MoveGroupInterface>(
@@ -139,8 +140,20 @@ geometry_msgs::msg::Pose MoveItAdapter::getCurrentPoseFromTF() const {
 
 	try {
 		// 使用TF获取当前位姿（避免MoveIt的时钟同步问题）
+		// 动态获取end_effector_link，支持多臂系统
+		// 重要：查询相对于世界坐标系的位置，而不是相对于基座
+		std::string ee_link = getEndEffectorLink();
+
+		if (ee_link.empty()) {
+			RCLCPP_ERROR(node_->get_logger(),
+			             "Failed to get end effector link for planning group '%s'",
+			             getPlanningGroupName().c_str());
+			return current_pose;
+		}
+
+		// Query world -> end_effector (absolute position in world frame)
 		auto transform =
-		    tf_buffer_.lookupTransform("world", "Link6", tf2::TimePointZero);
+		    tf_buffer_.lookupTransform("world", ee_link, tf2::TimePointZero);
 		current_pose.position.x = transform.transform.translation.x;
 		current_pose.position.y = transform.transform.translation.y;
 		current_pose.position.z = transform.transform.translation.z;
@@ -159,13 +172,16 @@ std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits(
     const std::string& arm_type) const {
 	std::vector<std::pair<double, double>> limits;
 
+	// 使用 planning_group_name 和 arm_type 组合作为缓存key
+	std::string cache_key = arm_type + "_" + planning_group_name_;
+
 	// 检查缓存
 	{
 		std::lock_guard<std::mutex> lock(joint_limits_cache_mutex_);
-		auto it = joint_limits_cache_.find(arm_type);
+		auto it = joint_limits_cache_.find(cache_key);
 		if (it != joint_limits_cache_.end()) {
-			RCLCPP_DEBUG(node_->get_logger(), "Using cached joint limits for %s",
-			            arm_type.c_str());
+			RCLCPP_DEBUG(node_->get_logger(), "Using cached joint limits for %s (group: %s)",
+			            arm_type.c_str(), planning_group_name_.c_str());
 			return it->second;
 		}
 	}
@@ -177,17 +193,20 @@ std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits(
 		std::string yaml_path =
 		    package_path + "/config/" + arm_type + "_joint_limits.yaml";
 
-		RCLCPP_INFO(node_->get_logger(), "Loading joint limits for %s from: %s",
-		            arm_type.c_str(), yaml_path.c_str());
-
 		YAML::Node config = YAML::LoadFile(yaml_path);
 
 		if (config["joint_limits"]) {
-			// 按顺序读取关节限制 (joint1, joint2, joint3, joint4, joint5,
-			// joint6)
-			std::vector<std::string> joint_names = {
-			    "joint1", "joint2", "joint3", "joint4", "joint5", "joint6"};
+			// 获取当前规划组的实际关节名称（已包含 left_joint 或 right_joint 前缀）
+			std::vector<std::string> joint_names = getJointNames();
 
+			if (joint_names.empty()) {
+				RCLCPP_WARN(node_->get_logger(),
+				            "No joint names found for planning_group %s, cannot load limits",
+				            planning_group_name_.c_str());
+				return limits;  // 返回空列表
+			}
+
+			// 逐个加载关节限位
 			for (const auto& joint_name : joint_names) {
 				if (config["joint_limits"][joint_name]) {
 					auto joint_config = config["joint_limits"][joint_name];
@@ -201,30 +220,36 @@ std::vector<std::pair<double, double>> MoveItAdapter::getJointLimits(
 						limits.emplace_back(min_pos, max_pos);
 					} else {
 						// 如果没有位置限制，使用默认值
+						RCLCPP_WARN(node_->get_logger(),
+						           "Joint %s has no position limits in YAML, using [-π, π]",
+						           joint_name.c_str());
 						limits.emplace_back(-M_PI, M_PI);
 					}
 				} else {
 					// 如果关节配置不存在，使用默认值
+					RCLCPP_WARN(node_->get_logger(),
+					           "Joint %s not found in YAML config, using default limits [-π, π]",
+					           joint_name.c_str());
 					limits.emplace_back(-M_PI, M_PI);
 				}
 			}
 
-			RCLCPP_INFO(node_->get_logger(),
-			            "Successfully loaded joint limits for %s from YAML "
-			            "file: %zu joints",
-			            arm_type.c_str(), limits.size());
 
-			// 将结果存入缓存
+			// 将结果存入缓存（使用 cache_key 包含 planning_group_name）
 			{
 				std::lock_guard<std::mutex> lock(joint_limits_cache_mutex_);
-				joint_limits_cache_[arm_type] = limits;
+				joint_limits_cache_[cache_key] = limits;
 			}
 
 			return limits;
+		} else {
+			RCLCPP_ERROR(node_->get_logger(),
+			            "Missing 'joint_limits' section in YAML file: %s",
+			            yaml_path.c_str());
 		}
 	} catch (const std::exception& e) {
-		RCLCPP_WARN(node_->get_logger(),
-		            "Failed to load joint limits from YAML: %s.", e.what());
+		RCLCPP_ERROR(node_->get_logger(),
+		            "Failed to load joint limits from YAML: %s", e.what());
 	}
 	return limits;
 }
@@ -358,6 +383,28 @@ Eigen::MatrixXd MoveItAdapter::computeJacobian(
 
 	return jacobian;
 }
+geometry_msgs::msg::Pose MoveItAdapter::worldPoseToBaseLinkPose(const geometry_msgs::msg::Pose& world_pose) const {
+
+	geometry_msgs::msg::Pose baselink_pose = world_pose;
+
+	try {
+		auto transform = tf_buffer_.lookupTransform(getBaseLink(), "world", tf2::TimePointZero);
+
+		// 使用 TF2 库转换位姿
+		tf2::doTransform(world_pose, baselink_pose, transform);
+		RCLCPP_DEBUG(node_->get_logger(),
+					"Converted pose from world [%.4f, %.4f, %.4f] to baselink [%.4f, %.4f, %.4f]",
+					world_pose.position.x, world_pose.position.y, world_pose.position.z,
+					baselink_pose.position.x, baselink_pose.position.y, baselink_pose.position.z);
+
+	} catch (const tf2::TransformException& ex) {
+		RCLCPP_WARN(node_->get_logger(),
+					"Could not transform pose from world to %s: %s",
+					getBaseLink().c_str(), ex.what());
+	}
+	return baselink_pose;
+}
+
 
 void MoveItAdapter::loadScalingParameters() {
 	// 从参数服务器获取缩放因子
@@ -369,16 +416,9 @@ void MoveItAdapter::loadScalingParameters() {
 		std::string velocity_param_name = controller_type_ + ".velocity_scaling_factor";
 		std::string acceleration_param_name = controller_type_ + ".acceleration_scaling_factor";
 
-		RCLCPP_INFO(node_->get_logger(),
-		           "MoveItAdapter: Looking for parameters: '%s' and '%s'",
-		           velocity_param_name.c_str(), acceleration_param_name.c_str());
-
 		// 尝试从参数服务器获取参数
 		if (node_->has_parameter(velocity_param_name)) {
 			velocity_scaling_factor_ = node_->get_parameter(velocity_param_name).as_double();
-			RCLCPP_INFO(node_->get_logger(),
-			           "MoveItAdapter: Found '%s' = %.2f",
-			           velocity_param_name.c_str(), velocity_scaling_factor_);
 		} else {
 			RCLCPP_WARN(node_->get_logger(),
 			           "MoveItAdapter: Parameter '%s' not found, using default 1.0",
@@ -387,9 +427,6 @@ void MoveItAdapter::loadScalingParameters() {
 
 		if (node_->has_parameter(acceleration_param_name)) {
 			acceleration_scaling_factor_ = node_->get_parameter(acceleration_param_name).as_double();
-			RCLCPP_INFO(node_->get_logger(),
-			           "MoveItAdapter: Found '%s' = %.2f",
-			           acceleration_param_name.c_str(), acceleration_scaling_factor_);
 		} else {
 			RCLCPP_WARN(node_->get_logger(),
 			           "MoveItAdapter: Parameter '%s' not found, using default 1.0",
@@ -404,10 +441,6 @@ void MoveItAdapter::loadScalingParameters() {
 			acceleration_scaling_factor_ = node_->get_parameter("acceleration_scaling_factor").as_double();
 		}
 	}
-
-	RCLCPP_INFO(node_->get_logger(),
-	           "MoveItAdapter: Final scaling factors - velocity=%.2f, acceleration=%.2f",
-	           velocity_scaling_factor_, acceleration_scaling_factor_);
 
 	applyScalingFactors();
 }
@@ -424,11 +457,6 @@ void MoveItAdapter::applyScalingFactors() {
 
 	move_group_->setMaxAccelerationScalingFactor(acceleration_scaling_factor_);
 	move_group_->setMaxVelocityScalingFactor(velocity_scaling_factor_);
-
-	RCLCPP_INFO(node_->get_logger(),
-	           "MoveIt scaling factors applied: velocity=%.2f, acceleration=%.2f (type: %s)",
-	           velocity_scaling_factor_, acceleration_scaling_factor_,
-	           controller_type_.empty() ? "default" : controller_type_.c_str());
 }
 
 bool MoveItAdapter::planPoseGoalMultiAttempt(
@@ -481,7 +509,23 @@ std::vector<double> MoveItAdapter::getCurrentJointState() const {
 		return {};
 	}
 
-	return latest_joint_state_->position;
+	// 只返回planning group相关的关节状态，而不是所有关节
+	auto joint_names = getJointNames();
+	std::vector<double> group_state;
+
+	for (const auto& joint_name : joint_names) {
+		auto it = std::find(latest_joint_state_->name.begin(),
+		                    latest_joint_state_->name.end(),
+		                    joint_name);
+		if (it != latest_joint_state_->name.end()) {
+			size_t idx = std::distance(latest_joint_state_->name.begin(), it);
+			if (idx < latest_joint_state_->position.size()) {
+				group_state.push_back(latest_joint_state_->position[idx]);
+			}
+		}
+	}
+
+	return group_state;
 }
 
 std::string MoveItAdapter::getBaseLink() const {
@@ -522,10 +566,11 @@ std::string MoveItAdapter::getBaseLink() const {
 		return "";
 	}
 
-	std::string base_link = parent_link->getName();
-	RCLCPP_INFO(node_->get_logger(), "Base link for planning group '%s': %s",
-	            move_group_->getName().c_str(), base_link.c_str());
-	return base_link;
+	return parent_link->getName();
+}
+
+std::string MoveItAdapter::getPlanningGroupName() const {
+	return planning_group_name_;
 }
 
 std::string MoveItAdapter::getURDFString(const std::string& arm_type) const {

@@ -42,25 +42,27 @@ public:
 
 	/**
 	 * @brief 规划经过中间点的圆弧轨迹
-	 * @param start_pose 起点位姿
 	 * @param via_point  中间经过点位姿
 	 * @param goal_pose  目标位姿
+	 * @param arm_type 机械臂类型（用于加载对应的关节限制）
 	 * @return 生成的Trajectory对象
 	 */
 	domain::entities::Trajectory planArc(
-	    const geometry_msgs::msg::Pose& start_pose,
+	    const geometry_msgs::msg::Pose& via_point,
 	    const geometry_msgs::msg::Pose& goal_pose,
-	    const geometry_msgs::msg::Pose& via_point);
+	    const std::string& arm_type = "arm620");
 
 	/**
 	 * @brief 规划整圆轨迹 (CIRCLE模式: center为圆心, goal定义半径)
 	 * @param center       圆心位姿
 	 * @param radius_point 定义半径的点位姿
+	 * @param arm_type 机械臂类型（用于加载对应的关节限制）
 	 * @return 生成的Trajectory对象
 	 */
 	domain::entities::Trajectory planCircle(
 	    const geometry_msgs::msg::Pose& center,
-	    const geometry_msgs::msg::Pose& radius_point);
+	    const geometry_msgs::msg::Pose& radius_point,
+	    const std::string& arm_type = "arm620");
 
 	/**
 	 * @brief 规划通过三点的圆弧轨迹
@@ -80,13 +82,15 @@ public:
 	 * @param ctrl1   中间点1
 	 * @param ctrl2   中间点2
 	 * @param goal    目标位姿
+	 * @param arm_type 机械臂类型（用于加载对应的关节限制）
 	 * @return 生成的Trajectory对象
 	 */
 	domain::entities::Trajectory planBezier(
 	    const geometry_msgs::msg::Pose& start,
 	    const geometry_msgs::msg::Pose& ctrl1,
 	    const geometry_msgs::msg::Pose& ctrl2,
-	    const geometry_msgs::msg::Pose& goal);
+	    const geometry_msgs::msg::Pose& goal,
+	    const std::string& arm_type = "arm620");
 
 private:
 	std::shared_ptr<integration::MoveItAdapter> moveit_;
@@ -114,6 +118,7 @@ private:
 	 * @param ctrl1 控制点1位姿
 	 * @param ctrl2 控制点2位姿
 	 * @param goal 目标位姿
+	 * @param arm_type 机械臂类型（用于加载对应的关节限制）
 	 * @param cartesian_step 笛卡尔采样步长
 	 * @return 关节空间路径
 	 */
@@ -122,16 +127,19 @@ private:
 	    const geometry_msgs::msg::Pose& ctrl1,
 	    const geometry_msgs::msg::Pose& ctrl2,
 	    const geometry_msgs::msg::Pose& goal,
+	    const std::string& arm_type = "arm620",
 	    double cartesian_step = 0.02) const;
 
 	/**
 	 * @brief 圆形路径笛卡尔采样（包含关节跳跃检测）
 	 * @param waypoints 圆形路径上的笛卡尔路径点
+	 * @param arm_type 机械臂类型（用于加载对应的关节限制）
 	 * @param cartesian_step 笛卡尔采样步长
 	 * @return 关节空间路径
 	 */
 	std::vector<Eigen::VectorXd> sampleCircleCartesianPath(
 	    const std::vector<geometry_msgs::msg::Pose>& waypoints,
+	    const std::string& arm_type = "arm620",
 	    double cartesian_step = 0.02) const;
 
 	/**

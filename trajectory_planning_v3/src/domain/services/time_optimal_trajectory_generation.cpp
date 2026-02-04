@@ -105,10 +105,6 @@ TimeOptimalTrajectoryParameterization::compute(
         });
     }
 
-    RCLCPP_INFO(rclcpp::get_logger("TOTG"),
-                "Generated trajectory with %zu keypoints, duration=%.3f s",
-                traj.size(), rt.getDuration());
-
     return traj;
 }
 

@@ -9,7 +9,7 @@ string route_name  # 轨迹名称（可选）
 
 # 几何关键点
 geometry_msgs/Pose[] waypoints
-#   - 对ARC: [goal, center]
+#   - 对ARC: [via_point, goal]
 #   - 对BEZIER: [start, control1, control2, end]
 #   - 对CIRCLE: [center, radius_point]
 #   - 对CIRCLE3PT: [p1, p2, p3]

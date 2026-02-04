@@ -75,6 +75,7 @@ private:
 
 	rclcpp::Node::SharedPtr node_;
 	rclcpp::Logger logger_;
+	std::string arm_type_;  // 存储机械臂类型，用于规划时使用
 
 	// Current joint state (for IK seed in continuous planning)
 	std::vector<double> current_joint_state_;
@@ -90,8 +91,7 @@ private:
 	    const trajectory_planning_interfaces::msg::MoveCRequest& request);
 	PlanningResult createFailureResult(const std::string& operation,
 	                                   const std::string& reason);
-	PlanningResult createSuccessResult(const Trajectory& trajectory,
-	                                   const std::string& operation);
+	PlanningResult createSuccessResult(const Trajectory& trajectory);
 };
 
 }  // namespace trajectory_planning::application::services

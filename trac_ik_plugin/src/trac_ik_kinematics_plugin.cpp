@@ -121,11 +121,6 @@ bool TRAC_IKKinematicsPlugin::initialize(
 				    std::numeric_limits<float>::lowest();
 				joint_max_(joint_num - 1) = std::numeric_limits<float>::max();
 			}
-			RCLCPP_INFO_STREAM(node->get_logger(),
-			                   "IK Using joint "
-			                       << chain_segs[i].getName() << " "
-			                       << joint_min_(joint_num - 1) << " "
-			                       << joint_max_(joint_num - 1));
 		}
 	}
 
@@ -135,12 +130,8 @@ bool TRAC_IKKinematicsPlugin::initialize(
 	node->declare_parameter(group_name + "/position_only_ik", false);
 	position_ik_ =
 	    node->get_parameter(group_name + "/position_only_ik").as_bool();
-	RCLCPP_INFO(node->get_logger(),
-	            "Looking in common namespaces for param name: %s",
-	            (group_name + "/solve_type").c_str());
 	node->declare_parameter(group_name + "/solve_type", std::string("Speed"));
 	solve_type_ = node->get_parameter(group_name + "/solve_type").as_string();
-	RCLCPP_INFO(node->get_logger(), "Using solve type %s", solve_type_.c_str());
 
 	active_ = true;
 	return true;

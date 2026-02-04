@@ -57,6 +57,15 @@ public:
 	std::vector<std::string> getJointNames() const;
 	geometry_msgs::msg::PoseStamped getCurrentPose() const;
 	geometry_msgs::msg::Pose getCurrentPoseFromTF() const;
+	/**
+	 * @brief 获取当前规划组的关节限制
+	 * @param arm_type 机械臂类型，用于确定YAML文件（默认"arm620"）
+	 * @return 关节限制向量 [(min, max), ...]
+	 *
+	 * 对于dual-arm系统：
+	 * - 当planning_group="left_arm"时，加载left_joint1-6的限制
+	 * - 当planning_group="right_arm"时，加载right_joint1-6的限制
+	 */
 	std::vector<std::pair<double, double>> getJointLimits(
 	    const std::string& arm_type = "arm620") const;
 
@@ -68,6 +77,12 @@ public:
 	 * @return 基础链接名称（如 "left_base_link"、"right_base_link" 等）
 	 */
 	std::string getBaseLink() const;
+
+	/**
+	 * @brief 获取规划组的名称
+	 * @return 规划组名称（如 "left_arm"、"right_arm" 等）
+	 */
+	std::string getPlanningGroupName() const;
 
 	// ===== 获取缩放参数 =====
 	/**
@@ -107,11 +122,19 @@ public:
 	bool setStartState(const std::vector<double>& joint_values);
 	void resetStartStateToDefault();
 	
+	/**
+	 * @brief 把位姿从 world 坐标系转换到 base_link 坐标系
+	 * @param world_pose world 坐标系中的位姿
+	 * @return base_link 坐标系中的位姿
+	 */
+	geometry_msgs::msg::Pose worldPoseToBaseLinkPose(const geometry_msgs::msg::Pose& world_pose) const;
+
 	// 参数管理方法
 	void loadScalingParameters();
 	void applyScalingFactors();
 private:
 	rclcpp::Node::SharedPtr node_;
+	std::string planning_group_name_;  // 规划组名称（如 "left_arm"、"right_arm" 等）
 	std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
 
 	// TF支持
