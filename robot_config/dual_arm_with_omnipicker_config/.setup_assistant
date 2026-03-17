@@ -1,0 +1,19 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: robot_description
+    relative_path: urdf/dual_arm_with_omnipicker.urdf
+  srdf:
+    relative_path: config/dual_arm_with_omnipicker.srdf
+  package_settings:
+    author_name: dky
+    author_email: d570737261@163.com
+    generated_timestamp: 1773716677
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro

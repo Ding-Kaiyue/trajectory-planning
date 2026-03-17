@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="dual_arm_with_pgc">
+    <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
+
+    <!-- Import dual_arm_with_pgc urdf file -->
+    <xacro:include filename="$(find robot_description)/urdf/dual_arm_with_pgc.urdf" />
+
+    <!-- Import control_xacro -->
+    <xacro:include filename="dual_arm_with_pgc.ros2_control.xacro" />
+
+
+    <xacro:dual_arm_with_pgc_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+
+</robot>

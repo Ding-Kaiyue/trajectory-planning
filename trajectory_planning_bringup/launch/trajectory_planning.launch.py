@@ -9,6 +9,7 @@ from launch.actions import IncludeLaunchDescription
 
 def launch_moveit_config(context, *args, **kwargs):
     robot_model_name = LaunchConfiguration('robot_model_name').perform(context)
+    moveit_robot_model_name = robot_model_name
 
     if robot_model_name == 'arm620':
         config_pkg = 'arm620_config'
@@ -16,13 +17,20 @@ def launch_moveit_config(context, *args, **kwargs):
         config_pkg = 'arm380_config'
     elif robot_model_name == 'dual_arm620':
         config_pkg = 'dual_arm620_config'
+    elif robot_model_name == 'dual_arm_with_pgc':
+        config_pkg = 'dual_arm_with_pgc_config'
+    elif robot_model_name == 'dual_arm_with_omnipicker':
+        config_pkg = 'dual_arm_with_omnipicker_config'
     else:
         raise ValueError(f'Unsupported robot model name: {robot_model_name}')
-    
+
     moveit_config_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory(config_pkg), 'launch', 'real_moveit_demo.launch.py')
-        )
+        ),
+        launch_arguments={
+            'robot_model_name': moveit_robot_model_name
+        }.items()
     )
     return [moveit_config_launch]
 
@@ -41,7 +49,7 @@ def generate_launch_description():  # 修复：添加了括号
     
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
-        default_value='false',  # 修改：真实硬件应该用false
+        default_value='false', 
         description='Use simulation (Gazebo) clock if true'
     )
     
