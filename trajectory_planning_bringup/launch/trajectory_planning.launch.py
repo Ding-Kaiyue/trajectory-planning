@@ -21,6 +21,8 @@ def launch_moveit_config(context, *args, **kwargs):
         config_pkg = 'dual_arm_with_pgc_config'
     elif robot_model_name == 'dual_arm_with_omnipicker':
         config_pkg = 'dual_arm_with_omnipicker_config'
+    elif robot_model_name == 'dual_arm_with_omnipicker_humanoid':
+        config_pkg = 'dual_arm_with_omnipicker_humanoid_config'
     else:
         raise ValueError(f'Unsupported robot model name: {robot_model_name}')
 
