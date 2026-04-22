@@ -65,7 +65,8 @@ public:
 	bool computeIKClosest(const geometry_msgs::msg::Pose& target_pose,
 	                       const std::vector<double>& seed_state,
 	                       std::vector<double>& solution,
-	                       int num_attempts = 5);
+	                       int num_attempts = 5,
+	                       bool warn_on_failure = true);
 
 	/**
 	 * @brief 设置 MoveItAdapter 引用（用于获取关节限制等信息）

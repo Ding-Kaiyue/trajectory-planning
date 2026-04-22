@@ -195,7 +195,8 @@ bool TracIKAdapter::computeIK(const geometry_msgs::msg::Pose& target_pose,
 bool TracIKAdapter::computeIKClosest(const geometry_msgs::msg::Pose& target_pose,
                                       const std::vector<double>& seed_state,
                                       std::vector<double>& solution,
-                                      int num_attempts)
+                                      int num_attempts,
+                                      bool warn_on_failure)
 {
 	try {
 		if (!chain_initialized_) {
@@ -282,8 +283,10 @@ bool TracIKAdapter::computeIKClosest(const geometry_msgs::msg::Pose& target_pose
 		}
 
 		if (!found_any) {
-			RCLCPP_WARN(node_->get_logger(),
-						 "IK solving failed after %d attempts", num_attempts);
+			if (warn_on_failure) {
+				RCLCPP_WARN(node_->get_logger(),
+							 "IK solving failed after %d attempts", num_attempts);
+			}
 			return false;
 		}
 
