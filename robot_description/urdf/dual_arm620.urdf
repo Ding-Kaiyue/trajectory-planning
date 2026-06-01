@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<robot name="dual_arm620">
+<robot name="dual_arm620" xmlns:tesseract="http://ros-industrial.org/tesseract" tesseract:make_convex="true">
   <!-- World link -->
   <link name="world"/>
 
